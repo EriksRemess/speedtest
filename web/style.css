@@ -220,6 +220,21 @@ footer {
   color: var(--subtext);
   font-size: 11px;
 }
+.source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  text-decoration: none;
+}
+.source:hover {
+  color: var(--text);
+}
+.source svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
 :focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 3px;
