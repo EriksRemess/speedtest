@@ -23,6 +23,8 @@ $("host").textContent = location.host;
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const nonce = () => `${Date.now()}-${Math.random()}`;
 const TEST_DURATION_MS = 5_000;
+const DISPLAY_INTERVAL_MS = 100;
+const TRANSFER_STREAMS = 4;
 
 function storedTheme() {
   try {
@@ -94,76 +96,77 @@ async function latency() {
 async function transferDown() {
   const requestSize = 512 * 1024 * 1024;
   const start = performance.now();
-  let bytes = 0;
+  const state = { bytes: 0, lastDisplay: 0 };
   show(0, "Testing download", 0);
 
-  while (performance.now() - start < TEST_DURATION_MS) {
-    const response = await fetch(
-      `/api/download?size=${requestSize}&n=${nonce()}`,
-      { cache: "no-store" },
-    );
-    if (!response.ok || !response.body) throw new Error("Download failed");
-    const reader = response.body.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      bytes += value.byteLength;
-      const elapsed = performance.now() - start;
-      const seconds = elapsed / 1000;
-      show(
-        bytes * 8 / seconds / 1e6,
-        "Testing download",
-        elapsed / TEST_DURATION_MS * 100,
+  async function stream() {
+    while (performance.now() - start < TEST_DURATION_MS) {
+      const response = await fetch(
+        `/api/download?size=${requestSize}&n=${nonce()}`,
+        { cache: "no-store" },
       );
-      if (elapsed >= TEST_DURATION_MS) {
-        await reader.cancel();
-        break;
+      if (!response.ok || !response.body) throw new Error("Download failed");
+      const reader = response.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        state.bytes += value.byteLength;
+        const elapsed = performance.now() - start;
+        updateTransferDisplay(state, elapsed, "Testing download");
+        if (elapsed >= TEST_DURATION_MS) {
+          await reader.cancel();
+          break;
+        }
       }
     }
   }
 
-  return bytes * 8 / ((performance.now() - start) / 1000) / 1e6;
+  await Promise.all(Array.from({ length: TRANSFER_STREAMS }, stream));
+  return state.bytes * 8 / ((performance.now() - start) / 1000) / 1e6;
 }
 
 async function transferUp() {
   const minimumChunk = 256 * 1024;
-  const maximumChunk = 64 * 1024 * 1024;
+  const maximumChunk = 16 * 1024 * 1024;
   const start = performance.now();
-  let chunkSize = minimumChunk;
-  let bytes = 0;
+  const state = { bytes: 0, lastDisplay: 0 };
   show(0, "Testing upload", 0);
 
-  while (performance.now() - start < TEST_DURATION_MS) {
-    const response = await fetch(`/api/upload?n=${nonce()}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/octet-stream" },
-      body: new Uint8Array(chunkSize),
-    });
-    if (!response.ok) throw new Error("Upload failed");
-    const result = await response.json();
-    bytes += result.bytes;
-    const elapsed = performance.now() - start;
-    const seconds = elapsed / 1000;
-    show(
-      bytes * 8 / seconds / 1e6,
-      "Testing upload",
-      elapsed / TEST_DURATION_MS * 100,
-    );
+  async function stream() {
+    let chunkSize = minimumChunk;
+    while (performance.now() - start < TEST_DURATION_MS) {
+      const response = await fetch(`/api/upload?n=${nonce()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: new Uint8Array(chunkSize),
+      });
+      if (!response.ok) throw new Error("Upload failed");
+      const result = await response.json();
+      state.bytes += result.bytes;
+      const elapsed = performance.now() - start;
+      const seconds = elapsed / 1000;
+      updateTransferDisplay(state, elapsed, "Testing upload");
 
-    const bytesPerSecond = bytes / seconds;
-    const remainingSeconds = Math.max(
-      0.25,
-      (TEST_DURATION_MS - elapsed) / 1000,
-    );
-    chunkSize = Math.round(
-      Math.min(
-        maximumChunk,
-        Math.max(minimumChunk, bytesPerSecond * remainingSeconds * 0.5),
-      ),
-    );
+      const bytesPerSecondPerStream = state.bytes / seconds / TRANSFER_STREAMS;
+      const desired = bytesPerSecondPerStream * 0.5;
+      chunkSize = Math.round(
+        Math.min(maximumChunk, Math.max(minimumChunk, desired)) / minimumChunk,
+      ) * minimumChunk;
+    }
   }
 
-  return bytes * 8 / ((performance.now() - start) / 1000) / 1e6;
+  await Promise.all(Array.from({ length: TRANSFER_STREAMS }, stream));
+  return state.bytes * 8 / ((performance.now() - start) / 1000) / 1e6;
+}
+
+function updateTransferDisplay(state, elapsed, label) {
+  if (elapsed - state.lastDisplay < DISPLAY_INTERVAL_MS) return;
+  show(
+    state.bytes * 8 / (elapsed / 1000) / 1e6,
+    label,
+    elapsed / TEST_DURATION_MS * 100,
+  );
+  state.lastDisplay = elapsed;
 }
 ui.start.addEventListener("click", async () => {
   ui.reading.hidden = false;
