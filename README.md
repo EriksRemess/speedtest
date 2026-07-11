@@ -38,11 +38,13 @@ Build and run the static, unprivileged image with Podman:
 
 ```sh
 podman build -t speedtest -f Containerfile .
-podman run --rm -p 8080:8080 -p 5201:5201 speedtest
+podman run --rm --network host speedtest
 ```
 
 Or run the published image:
 
 ```sh
-podman run --rm -p 8080:8080 -p 5201:5201 ghcr.io/eriksremess/speedtest:latest
+podman run --rm --network host ghcr.io/eriksremess/speedtest:latest
 ```
+
+Host networking is recommended on Linux so Podman port forwarding does not distort either direction of the measurement. To use a different web port, append `--http-port PORT` to the command.
