@@ -6,9 +6,12 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const INDEX: &[u8] = include_bytes!("../web/index.html");
+const RESULTS_INDEX: &[u8] = include_bytes!("../web/results.html");
 const STYLE: &[u8] = include_bytes!("../web/style.css");
 const APP: &[u8] = include_bytes!("../web/app.js");
+const RESULTS_APP: &[u8] = include_bytes!("../web/results.js");
 static RENDERED_INDEX: OnceLock<String> = OnceLock::new();
+static RENDERED_RESULTS_INDEX: OnceLock<String> = OnceLock::new();
 const MAX_HEADER: usize = 32 * 1024;
 const MAX_UPLOAD: u64 = 512 * 1024 * 1024;
 const MAX_DOWNLOAD: usize = 512 * 1024 * 1024;
@@ -120,8 +123,21 @@ fn handle(mut stream: TcpStream) -> io::Result<()> {
             rendered_index().as_bytes(),
             false,
         ),
+        ("GET", "/results" | "/results/") => response(
+            &mut stream,
+            200,
+            "text/html; charset=utf-8",
+            rendered_results_index().as_bytes(),
+            false,
+        ),
         ("GET", "/style.css") => asset(&mut stream, target, "text/css; charset=utf-8", STYLE),
         ("GET", "/app.js") => asset(&mut stream, target, "text/javascript; charset=utf-8", APP),
+        ("GET", "/results.js") => asset(
+            &mut stream,
+            target,
+            "text/javascript; charset=utf-8",
+            RESULTS_APP,
+        ),
         ("GET", "/api/ping") => response(
             &mut stream,
             200,
@@ -189,6 +205,14 @@ fn rendered_index() -> &'static str {
         String::from_utf8_lossy(INDEX)
             .replace("__STYLE_HASH__", &content_hash(STYLE))
             .replace("__APP_HASH__", &content_hash(APP))
+    })
+}
+
+fn rendered_results_index() -> &'static str {
+    RENDERED_RESULTS_INDEX.get_or_init(|| {
+        String::from_utf8_lossy(RESULTS_INDEX)
+            .replace("__STYLE_HASH__", &content_hash(STYLE))
+            .replace("__RESULTS_HASH__", &content_hash(RESULTS_APP))
     })
 }
 
@@ -302,6 +326,11 @@ mod tests {
         assert!(!index.contains("__APP_HASH__"));
         assert!(index.contains(&format!("style.css?hash={}", content_hash(STYLE))));
         assert!(index.contains(&format!("app.js?hash={}", content_hash(APP))));
+
+        let results = rendered_results_index();
+        assert!(!results.contains("__STYLE_HASH__"));
+        assert!(!results.contains("__RESULTS_HASH__"));
+        assert!(results.contains(&format!("results.js?hash={}", content_hash(RESULTS_APP))));
     }
 
     #[test]

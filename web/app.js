@@ -25,6 +25,8 @@ const nonce = () => `${Date.now()}-${Math.random()}`;
 const TEST_DURATION_MS = 5_000;
 const DISPLAY_INTERVAL_MS = 100;
 const TRANSFER_STREAMS = 4;
+const RESULTS_KEY = "speedtest-results";
+const MAX_SAVED_RESULTS = 500;
 
 function storedTheme() {
   try {
@@ -39,6 +41,20 @@ function storeTheme(theme) {
     localStorage.setItem("theme", theme);
   } catch {
     // Persistence is optional; storage restrictions must not break the test.
+  }
+}
+
+function saveResult(result) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(RESULTS_KEY) || "[]");
+    const results = Array.isArray(stored) ? stored : [];
+    results.unshift(result);
+    localStorage.setItem(
+      RESULTS_KEY,
+      JSON.stringify(results.slice(0, MAX_SAVED_RESULTS)),
+    );
+  } catch {
+    // History is optional and remains local to this browser.
   }
 }
 
@@ -197,6 +213,14 @@ ui.start.addEventListener("click", async () => {
     const up = await transferUp();
     ui.upload.textContent = up.toFixed(up < 100 ? 1 : 0);
     setStage("upload", "done");
+    saveResult({
+      timestamp: new Date().toISOString(),
+      host: location.host,
+      latency: ping.median,
+      jitter: ping.jitter,
+      download: down,
+      upload: up,
+    });
     show(NaN, "Test complete", 100, "");
   } catch (error) {
     show(NaN, error.message || "Test failed", 0, "");

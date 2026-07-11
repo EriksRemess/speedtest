@@ -60,6 +60,29 @@ header strong {
   font-size: 16px;
   letter-spacing: -.01em;
 }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header-link,
+.secondary-button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--surface);
+  border-radius: 6px;
+  color: var(--subtext);
+  background: transparent;
+  font-size: 12px;
+  line-height: 32px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.header-link:hover,
+.secondary-button:hover {
+  color: var(--text);
+  border-color: var(--overlay);
+}
 .theme {
   display: grid;
   width: 34px;
@@ -235,6 +258,94 @@ footer {
   height: 14px;
   fill: currentColor;
 }
+.results-page {
+  margin-top: 48px;
+}
+.results-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.results-heading h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -.025em;
+}
+.storage-note {
+  margin: 0 0 20px;
+  color: var(--subtext);
+  font-size: 11px;
+}
+.secondary-button:disabled {
+  cursor: default;
+  opacity: .45;
+}
+.results-table-wrap {
+  overflow-x: auto;
+  border-top: 1px solid var(--surface);
+  border-bottom: 1px solid var(--surface);
+}
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+.results-table th,
+.results-table td {
+  padding: 13px 10px;
+  border-bottom: 1px solid var(--surface);
+  text-align: right;
+  font-size: 12px;
+}
+.results-table th {
+  color: var(--subtext);
+  font-size: 10px;
+  font-weight: 500;
+}
+.results-table th:first-child,
+.results-table td:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+.results-table th:last-child,
+.results-table td:last-child {
+  padding-right: 0;
+}
+.results-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.result-date,
+.result-host {
+  display: block;
+}
+.result-host {
+  margin-top: 3px;
+  color: var(--subtext);
+  font-size: 10px;
+}
+.empty-results {
+  margin: 0;
+  padding: 32px 0;
+  border-top: 1px solid var(--surface);
+  border-bottom: 1px solid var(--surface);
+  color: var(--subtext);
+  font-size: 13px;
+  text-align: center;
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 18px;
+}
+.pagination span {
+  color: var(--subtext);
+  font-size: 11px;
+}
+.pagination button {
+  min-width: 76px;
+}
 :focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 3px;
@@ -246,6 +357,13 @@ footer {
   }
   .test {
     margin-top: 36px;
+  }
+  .results-page {
+    margin-top: 36px;
+  }
+  .results-table th,
+  .results-table td {
+    padding: 12px 8px;
   }
   .stages {
     margin-bottom: 24px;

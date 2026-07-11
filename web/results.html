@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="dark light">
-    <title>Speedtest</title>
+    <title>Results · Speedtest</title>
     <link rel="stylesheet" href="/style.css?hash=__STYLE_HASH__">
   </head>
   <body>
@@ -12,7 +12,7 @@
       <header>
         <strong>Speedtest</strong>
         <nav class="header-actions" aria-label="Site controls">
-          <a class="header-link" href="/results">Results</a>
+          <a class="header-link" href="/">New test</a>
           <button class="theme" id="theme" type="button"
             aria-label="Switch color theme">
             <svg class="moon" viewBox="0 0 24 24" aria-hidden="true">
@@ -27,27 +27,40 @@
           </button>
         </nav>
       </header>
-      <section class="test" aria-live="polite">
-        <ol class="stages" aria-label="Test stages">
-          <li id="stage-latency"><b>1</b><span>Latency</span></li>
-          <li id="stage-download"><b>2</b><span>Download</span></li>
-          <li id="stage-upload"><b>3</b><span>Upload</span></li>
-        </ol>
-        <div class="reading" id="reading" hidden>
-          <div><strong id="speed">—</strong> <small id="unit">Mbps</small></div>
-          <span id="phase">Ready</span>
+
+      <section class="results-page">
+        <div class="results-heading">
+          <h1>Results</h1>
+          <button class="secondary-button" id="clear"
+            type="button">Clear</button>
         </div>
-        <div class="progress" id="progress-track" aria-hidden="true" hidden>
-          <i id="progress"></i>
+        <p class="storage-note">Stored only in this browser.</p>
+
+        <p class="empty-results" id="empty" hidden>No saved tests yet.</p>
+        <div class="results-table-wrap" id="table-wrap" hidden>
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th scope="col">Date</th>
+                <th scope="col">Latency</th>
+                <th scope="col">Jitter</th>
+                <th scope="col">Download</th>
+                <th scope="col">Upload</th>
+              </tr>
+            </thead>
+            <tbody id="results"></tbody>
+          </table>
         </div>
-        <button id="start"><span>Start test</span></button>
-        <div class="metrics" id="metrics" hidden>
-          <article><span>Latency</span><div><strong id="latency">—</strong><small>ms</small></div></article>
-          <article><span>Jitter</span><div><strong id="jitter">—</strong><small>ms</small></div></article>
-          <article><span>Download</span><div><strong id="download">—</strong><small>Mbps</small></div></article>
-          <article><span>Upload</span><div><strong id="upload">—</strong><small>Mbps</small></div></article>
-        </div>
+
+        <nav class="pagination" id="pagination" aria-label="Results pages"
+          hidden>
+          <button class="secondary-button" id="previous"
+            type="button">Previous</button>
+          <span id="page"></span>
+          <button class="secondary-button" id="next" type="button">Next</button>
+        </nav>
       </section>
+
       <footer>
         <a class="source" href="https://github.com/EriksRemess/speedtest"
           target="_blank" rel="noopener noreferrer">
@@ -60,6 +73,6 @@
         <span id="host"></span>
       </footer>
     </main>
-    <script src="/app.js?hash=__APP_HASH__" defer></script>
+    <script src="/results.js?hash=__RESULTS_HASH__" defer></script>
   </body>
 </html>
