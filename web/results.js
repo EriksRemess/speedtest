@@ -82,10 +82,7 @@ function row(result) {
   const dateText = document.createElement("span");
   dateText.className = "result-date";
   dateText.textContent = new Date(result.timestamp).toLocaleString();
-  const host = document.createElement("span");
-  host.className = "result-host";
-  host.textContent = result.host || "";
-  date.append(dateText, host);
+  date.append(dateText);
   tr.append(date);
 
   for (

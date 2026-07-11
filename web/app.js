@@ -215,7 +215,6 @@ ui.start.addEventListener("click", async () => {
     setStage("upload", "done");
     saveResult({
       timestamp: new Date().toISOString(),
-      host: location.host,
       latency: ping.median,
       jitter: ping.jitter,
       download: down,

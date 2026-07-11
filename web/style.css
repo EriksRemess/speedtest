@@ -302,6 +302,7 @@ footer {
   color: var(--subtext);
   font-size: 10px;
   font-weight: 500;
+  text-align: left;
 }
 .results-table th:first-child,
 .results-table td:first-child {
@@ -315,14 +316,8 @@ footer {
 .results-table tbody tr:last-child td {
   border-bottom: 0;
 }
-.result-date,
-.result-host {
+.result-date {
   display: block;
-}
-.result-host {
-  margin-top: 3px;
-  color: var(--subtext);
-  font-size: 10px;
 }
 .empty-results {
   margin: 0;
