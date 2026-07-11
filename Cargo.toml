@@ -1,0 +1,14 @@
+[package]
+name = "speedtest"
+version = "0.1.0"
+edition = "2024"
+description = "A dependency-free browser speed test with an iperf3-compatible TCP server"
+license = "MIT"
+
+[dependencies]
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
