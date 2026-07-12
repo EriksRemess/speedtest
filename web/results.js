@@ -1,5 +1,12 @@
 const RESULTS_KEY = "speedtest-results";
 const PAGE_SIZE = 10;
+const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  day: "2-digit",
+  month: "short",
+  year: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -81,7 +88,7 @@ function row(result) {
   const date = document.createElement("td");
   const dateText = document.createElement("span");
   dateText.className = "result-date";
-  dateText.textContent = new Date(result.timestamp).toLocaleString();
+  dateText.textContent = DATE_FORMAT.format(new Date(result.timestamp));
   date.append(dateText);
   tr.append(date);
 
