@@ -80,8 +80,8 @@ function validResult(result) {
     );
 }
 
-function metric(value, unit) {
-  return `${value.toFixed(value < 100 ? 1 : 0)} ${unit}`;
+function metric(value) {
+  return value.toFixed(value < 100 ? 1 : 0);
 }
 
 function row(result) {
@@ -94,15 +94,15 @@ function row(result) {
   tr.append(date);
 
   for (
-    const [key, unit] of [
-      ["latency", "ms"],
-      ["jitter", "ms"],
-      ["download", "Mbps"],
-      ["upload", "Mbps"],
+    const key of [
+      "latency",
+      "jitter",
+      "download",
+      "upload",
     ]
   ) {
     const cell = document.createElement("td");
-    cell.textContent = metric(result[key], unit);
+    cell.textContent = metric(result[key]);
     tr.append(cell);
   }
   return tr;

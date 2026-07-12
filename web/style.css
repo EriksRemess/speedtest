@@ -288,6 +288,7 @@ footer {
 }
 .results-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   white-space: nowrap;
 }
@@ -303,6 +304,16 @@ footer {
   font-size: 10px;
   font-weight: 500;
   text-align: left;
+}
+.results-table th:first-child {
+  width: 34%;
+}
+.results-table th small {
+  display: block;
+  margin-top: 2px;
+  color: var(--overlay);
+  font-size: 8px;
+  font-weight: 400;
 }
 .results-table th:first-child,
 .results-table td:first-child {
@@ -359,6 +370,25 @@ footer {
   .results-table th,
   .results-table td {
     padding: 12px 8px;
+  }
+  .results-table-wrap {
+    overflow: hidden;
+  }
+  .results-table th,
+  .results-table td {
+    padding: 11px 4px;
+    font-size: 11px;
+  }
+  .results-table th {
+    font-size: 9px;
+  }
+  .results-table th:first-child,
+  .results-table td:first-child {
+    padding-left: 0;
+  }
+  .results-table th:last-child,
+  .results-table td:last-child {
+    padding-right: 0;
   }
   .stages {
     margin-bottom: 24px;
