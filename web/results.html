@@ -41,11 +41,17 @@
           <table class="results-table">
             <thead>
               <tr>
-                <th scope="col">Date</th>
-                <th scope="col">Latency<small>ms</small></th>
-                <th scope="col">Jitter<small>ms</small></th>
-                <th scope="col">Down<small>Mbps</small></th>
-                <th scope="col">Up<small>Mbps</small></th>
+                <th
+                  scope="col"><button class="sort-button" data-sort="timestamp"
+                    type="button">Date</button></th>
+                <th scope="col"><button class="sort-button" data-sort="latency"
+                    type="button">Latency<small>ms</small></button></th>
+                <th scope="col"><button class="sort-button" data-sort="jitter"
+                    type="button">Jitter<small>ms</small></button></th>
+                <th scope="col"><button class="sort-button" data-sort="download"
+                    type="button">Download<small>Mbps</small></button></th>
+                <th scope="col"><button class="sort-button" data-sort="upload"
+                    type="button">Upload<small>Mbps</small></button></th>
               </tr>
             </thead>
             <tbody id="results"></tbody>

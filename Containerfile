@@ -9,7 +9,7 @@ RUN cargo build --locked --release
 FROM scratch
 
 LABEL org.opencontainers.image.title="speedtest" \
-      org.opencontainers.image.description="Dependency-free web and iperf3-compatible speed test server"
+      org.opencontainers.image.description="Dependency-free web speed test with optional iperf3 compatibility"
 
 COPY --from=build /src/target/release/speedtest /speedtest
 

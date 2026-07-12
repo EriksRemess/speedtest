@@ -150,6 +150,13 @@ fn handle(mut stream: TcpStream) -> io::Result<()> {
             b"{\"ok\":true}",
             false,
         ),
+        ("GET", "/health") => response(
+            &mut stream,
+            200,
+            "application/json",
+            b"{\"status\":\"ok\"}",
+            false,
+        ),
         ("GET", "/api/download") => download(&mut stream, query_size(target).min(MAX_DOWNLOAD)),
         ("POST", "/api/upload") if chunked_body => {
             if expect_continue {

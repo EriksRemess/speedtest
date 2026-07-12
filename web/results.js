@@ -20,6 +20,7 @@ const ui = {
   previous: $("previous"),
   next: $("next"),
   page: $("page"),
+  sortButtons: [...document.querySelectorAll(".sort-button")],
 };
 
 $("host").textContent = location.host;
@@ -30,6 +31,8 @@ let currentPage = Math.max(
     10,
   ) || 1,
 );
+let sortKey = "timestamp";
+let sortDirection = "descending";
 
 function readStorage(key, fallback) {
   try {
@@ -109,7 +112,16 @@ function row(result) {
 }
 
 function render() {
-  const results = loadResults();
+  const direction = sortDirection === "ascending" ? 1 : -1;
+  const results = loadResults().sort((left, right) => {
+    const leftValue = sortKey === "timestamp"
+      ? Date.parse(left.timestamp)
+      : left[sortKey];
+    const rightValue = sortKey === "timestamp"
+      ? Date.parse(right.timestamp)
+      : right[sortKey];
+    return (leftValue - rightValue) * direction;
+  });
   const pageCount = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
   currentPage = Math.min(currentPage, pageCount);
   const start = (currentPage - 1) * PAGE_SIZE;
@@ -125,9 +137,33 @@ function render() {
   ui.previous.disabled = currentPage === 1;
   ui.next.disabled = currentPage === pageCount;
   ui.page.textContent = `Page ${currentPage} of ${pageCount}`;
+  for (const button of ui.sortButtons) {
+    const active = button.dataset.sort === sortKey;
+    const header = button.closest("th");
+    header.setAttribute("aria-sort", active ? sortDirection : "none");
+    button.dataset.direction = active
+      ? (sortDirection === "ascending" ? "up" : "down")
+      : "";
+  }
 
   const url = currentPage === 1 ? "/results" : `/results?page=${currentPage}`;
   history.replaceState(null, "", url);
+}
+
+for (const button of ui.sortButtons) {
+  button.addEventListener("click", () => {
+    const nextKey = button.dataset.sort;
+    if (sortKey === nextKey) {
+      sortDirection = sortDirection === "descending"
+        ? "ascending"
+        : "descending";
+    } else {
+      sortKey = nextKey;
+      sortDirection = "descending";
+    }
+    currentPage = 1;
+    render();
+  });
 }
 
 ui.previous.addEventListener("click", () => {

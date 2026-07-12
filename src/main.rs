@@ -9,29 +9,36 @@ use std::thread;
 #[derive(Clone, Copy)]
 struct Config {
     http_addr: SocketAddr,
-    iperf_addr: SocketAddr,
+    iperf_addr: Option<SocketAddr>,
 }
 
 fn main() -> io::Result<()> {
     let config = parse_args()?;
-    let iperf_listener = bind(config.iperf_addr, "iperf3")?;
+    let iperf_listener = config
+        .iperf_addr
+        .map(|addr| bind(addr, "iperf3"))
+        .transpose()?;
     let http_listener = bind(config.http_addr, "HTTP")?;
 
     println!("speedtest");
     println!("  web     http://{}", display_addr(config.http_addr));
-    println!(
-        "  iperf3  iperf3 -c {} -p {}",
-        client_host(config.iperf_addr.ip()),
-        config.iperf_addr.port()
-    );
+    if let (Some(addr), Some(listener)) = (config.iperf_addr, iperf_listener) {
+        println!(
+            "  iperf3  iperf3 -c {} -p {}",
+            client_host(addr.ip()),
+            addr.port()
+        );
 
-    thread::Builder::new()
-        .name("iperf3-listener".into())
-        .spawn(move || {
-            if let Err(error) = iperf::serve(iperf_listener) {
-                eprintln!("iperf3 server stopped: {error}");
-            }
-        })?;
+        thread::Builder::new()
+            .name("iperf3-listener".into())
+            .spawn(move || {
+                if let Err(error) = iperf::serve(listener) {
+                    eprintln!("iperf3 server stopped: {error}");
+                }
+            })?;
+    } else {
+        println!("  iperf3  disabled");
+    }
 
     http::serve(http_listener)
 }
@@ -48,6 +55,7 @@ fn bind(addr: SocketAddr, service: &str) -> io::Result<TcpListener> {
 fn parse_args() -> io::Result<Config> {
     let mut http_port = 8080;
     let mut iperf_port = 5201;
+    let mut iperf_enabled = true;
     let mut bind = IpAddr::V6(Ipv6Addr::UNSPECIFIED);
     let mut args = env::args().skip(1);
 
@@ -60,9 +68,10 @@ fn parse_args() -> io::Result<Config> {
             "--iperf-port" => {
                 iperf_port = value(&mut args, "--iperf-port")?.parse().map_err(invalid)?
             }
+            "--no-iperf" => iperf_enabled = false,
             "-h" | "--help" => {
                 println!(
-                    "Usage: speedtest [--bind ADDRESS] [--http-port PORT] [--iperf-port PORT]\n\nDefaults: --bind :: --http-port 8080 --iperf-port 5201"
+                    "Usage: speedtest [--bind ADDRESS] [--http-port PORT] [--iperf-port PORT] [--no-iperf]\n\nDefaults: --bind :: --http-port 8080 --iperf-port 5201"
                 );
                 std::process::exit(0);
             }
@@ -72,7 +81,7 @@ fn parse_args() -> io::Result<Config> {
 
     Ok(Config {
         http_addr: SocketAddr::new(bind, http_port),
-        iperf_addr: SocketAddr::new(bind, iperf_port),
+        iperf_addr: iperf_enabled.then(|| SocketAddr::new(bind, iperf_port)),
     })
 }
 

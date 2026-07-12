@@ -1,6 +1,6 @@
 # speedtest
 
-A tiny, self-hosted network speed test: a Rust standard-library backend, an embedded modern web UI, and an iperf3-compatible TCP server. There are no crate, JavaScript, font, image, or CDN dependencies.
+A tiny, self-hosted network speed test: a Rust standard-library backend, an embedded modern web UI, and an optional iperf3-compatible TCP server. There are no crate, JavaScript, font, image, or CDN dependencies.
 
 ## Run
 
@@ -9,6 +9,8 @@ cargo run --release
 ```
 
 Open `http://localhost:8080`. From another machine, use the server's LAN address.
+
+The HTTP health endpoint is available at `/health` and returns `{"status":"ok"}`.
 
 The native endpoint works with regular iperf3 clients:
 
@@ -24,6 +26,7 @@ Options:
 --bind ADDRESS       Listen address (default: ::)
 --http-port PORT     Web/API port (default: 8080)
 --iperf-port PORT    iperf3 port (default: 5201)
+--no-iperf           Disable the iperf3 server
 ```
 
 ## Compatibility
@@ -48,6 +51,12 @@ podman run --rm --network host ghcr.io/eriksremess/speedtest:latest
 ```
 
 Host networking is recommended on Linux so Podman port forwarding does not distort either direction of the measurement. To use a different web port, append `--http-port PORT` to the command.
+
+For a web-only container that does not listen on port 5201:
+
+```sh
+podman run --rm --network host ghcr.io/eriksremess/speedtest:latest --no-iperf
+```
 
 ## Reverse proxy
 

@@ -13,6 +13,9 @@ const ui = {
   reading: $("reading"),
   progressTrack: $("progress-track"),
   metrics: $("metrics"),
+  resultActions: $("result-actions"),
+  uploadMode: $("upload-mode"),
+  copyResult: $("copy-result"),
   stages: {
     latency: $("stage-latency"),
     download: $("stage-download"),
@@ -27,6 +30,7 @@ const DISPLAY_INTERVAL_MS = 100;
 const TRANSFER_STREAMS = 4;
 const RESULTS_KEY = "speedtest-results";
 const MAX_SAVED_RESULTS = 500;
+let currentResult = null;
 
 function storedTheme() {
   try {
@@ -161,12 +165,12 @@ function supportsRequestStreams() {
 async function transferUp() {
   if (supportsRequestStreams()) {
     try {
-      return await transferUpStreamed();
+      return { speed: await transferUpStreamed(), mode: "streamed" };
     } catch {
       // Safari, HTTP/1.x, or an incompatible proxy uses the portable fallback.
     }
   }
-  return transferUpBatched();
+  return { speed: await transferUpBatched(), mode: "compatibility" };
 }
 
 async function transferUpStreamed() {
@@ -248,10 +252,53 @@ function updateTransferDisplay(state, elapsed, label) {
   );
   state.lastDisplay = elapsed;
 }
+
+function resultText(result) {
+  const mode = result.uploadMode === "streamed" ? "streamed" : "compatibility";
+  return [
+    `Speedtest · ${new Date(result.timestamp).toLocaleString()}`,
+    `Latency: ${result.latency.toFixed(1)} ms`,
+    `Jitter: ${result.jitter.toFixed(1)} ms`,
+    `Download: ${result.download.toFixed(result.download < 100 ? 1 : 0)} Mbps`,
+    `Upload: ${
+      result.upload.toFixed(result.upload < 100 ? 1 : 0)
+    } Mbps (${mode})`,
+    location.origin,
+  ].join("\n");
+}
+
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.append(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
+ui.copyResult.addEventListener("click", async () => {
+  if (!currentResult) return;
+  try {
+    await copyText(resultText(currentResult));
+    ui.copyResult.textContent = "Copied";
+    setTimeout(() => ui.copyResult.textContent = "Copy result", 1_500);
+  } catch {
+    ui.copyResult.textContent = "Copy failed";
+  }
+});
+
 ui.start.addEventListener("click", async () => {
   ui.reading.hidden = false;
   ui.progressTrack.hidden = false;
   ui.metrics.hidden = false;
+  ui.resultActions.hidden = true;
+  currentResult = null;
   ui.start.disabled = true;
   ui.start.querySelector("span").textContent = "Testing…";
   ui.latency.textContent =
@@ -274,16 +321,23 @@ ui.start.addEventListener("click", async () => {
     setStage("download", "done");
     setStage("upload", "active");
     await pause(250);
-    const up = await transferUp();
+    const upload = await transferUp();
+    const up = upload.speed;
     ui.upload.textContent = up.toFixed(up < 100 ? 1 : 0);
     setStage("upload", "done");
-    saveResult({
+    currentResult = {
       timestamp: new Date().toISOString(),
       latency: ping.median,
       jitter: ping.jitter,
       download: down,
       upload: up,
-    });
+      uploadMode: upload.mode,
+    };
+    saveResult(currentResult);
+    ui.uploadMode.textContent = upload.mode === "streamed"
+      ? "Streamed upload"
+      : "Compatibility upload";
+    ui.resultActions.hidden = false;
     show(NaN, "Test complete", 100, "");
   } catch (error) {
     show(NaN, error.message || "Test failed", 0, "");
