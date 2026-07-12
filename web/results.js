@@ -1,11 +1,12 @@
 const RESULTS_KEY = "speedtest-results";
 const PAGE_SIZE = 10;
-const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+const DATE_FORMAT = new Intl.DateTimeFormat("en-GB", {
   day: "2-digit",
   month: "short",
   year: "numeric",
   hour: "2-digit",
   minute: "2-digit",
+  hour12: false,
 });
 
 const $ = (id) => document.getElementById(id);

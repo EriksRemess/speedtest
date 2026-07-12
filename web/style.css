@@ -295,7 +295,7 @@ footer {
 .results-table td {
   padding: 13px 10px;
   border-bottom: 1px solid var(--surface);
-  text-align: right;
+  text-align: left;
   font-size: 12px;
 }
 .results-table th {
