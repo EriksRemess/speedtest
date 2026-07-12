@@ -3,7 +3,7 @@ const PAGE_SIZE = 10;
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
   day: "2-digit",
   month: "short",
-  year: "2-digit",
+  year: "numeric",
   hour: "2-digit",
   minute: "2-digit",
 });
