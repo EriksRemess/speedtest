@@ -13,7 +13,7 @@ const RESULTS_APP: &[u8] = include_bytes!("../web/results.js");
 static RENDERED_INDEX: OnceLock<String> = OnceLock::new();
 static RENDERED_RESULTS_INDEX: OnceLock<String> = OnceLock::new();
 const MAX_HEADER: usize = 32 * 1024;
-const MAX_UPLOAD: u64 = 512 * 1024 * 1024;
+const MAX_UPLOAD: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_DOWNLOAD: usize = 512 * 1024 * 1024;
 const MIN_HTTP_WORKERS: usize = 4;
 const MAX_HTTP_WORKERS: usize = 64;
@@ -84,6 +84,7 @@ fn handle(mut stream: TcpStream) -> io::Result<()> {
     let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("");
     let mut content_length = 0_u64;
+    let mut chunked_body = false;
     let mut expect_continue = false;
     let mut header_bytes = request_line.len();
 
@@ -106,6 +107,10 @@ fn handle(mut stream: TcpStream) -> io::Result<()> {
         if let Some((name, value)) = line.split_once(':') {
             if name.eq_ignore_ascii_case("content-length") {
                 content_length = value.trim().parse().unwrap_or(u64::MAX);
+            } else if name.eq_ignore_ascii_case("transfer-encoding") {
+                chunked_body = value
+                    .split(',')
+                    .any(|encoding| encoding.trim().eq_ignore_ascii_case("chunked"));
             } else if name.eq_ignore_ascii_case("expect")
                 && value.trim().eq_ignore_ascii_case("100-continue")
             {
@@ -146,6 +151,12 @@ fn handle(mut stream: TcpStream) -> io::Result<()> {
             false,
         ),
         ("GET", "/api/download") => download(&mut stream, query_size(target).min(MAX_DOWNLOAD)),
+        ("POST", "/api/upload") if chunked_body => {
+            if expect_continue {
+                stream.write_all(b"HTTP/1.1 100 Continue\r\n\r\n")?;
+            }
+            upload_chunked(&mut stream, &mut reader)
+        }
         ("POST", "/api/upload") if content_length <= MAX_UPLOAD => {
             if expect_continue {
                 stream.write_all(b"HTTP/1.1 100 Continue\r\n\r\n")?;
@@ -280,10 +291,71 @@ fn upload(stream: &mut TcpStream, reader: &mut impl Read, size: u64) -> io::Resu
         }
         received += read as u64;
     }
-    let json = format!(
-        "{{\"bytes\":{received},\"seconds\":{:.6}}}",
-        started.elapsed().as_secs_f64()
-    );
+    upload_response(stream, received, started.elapsed().as_secs_f64())
+}
+
+fn upload_chunked(stream: &mut TcpStream, reader: &mut impl BufRead) -> io::Result<()> {
+    let started = Instant::now();
+    let received = match read_chunked_body(reader) {
+        Ok(received) => received,
+        Err(error) if error.kind() == io::ErrorKind::FileTooLarge => {
+            return response(stream, 413, "text/plain", b"upload too large", false);
+        }
+        Err(error) => return Err(error),
+    };
+    upload_response(stream, received, started.elapsed().as_secs_f64())
+}
+
+fn read_chunked_body(reader: &mut impl BufRead) -> io::Result<u64> {
+    let mut received = 0_u64;
+    let mut buffer = [0_u8; 128 * 1024];
+
+    loop {
+        let line = read_line_limited(reader, 128)?;
+        let size = line
+            .trim()
+            .split(';')
+            .next()
+            .and_then(|value| u64::from_str_radix(value, 16).ok())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "invalid chunk size"))?;
+        if size == 0 {
+            loop {
+                let trailer = read_line_limited(reader, MAX_HEADER)?;
+                if trailer == "\r\n" || trailer == "\n" || trailer.is_empty() {
+                    break;
+                }
+            }
+            break;
+        }
+        if received.saturating_add(size) > MAX_UPLOAD {
+            return Err(io::Error::new(
+                io::ErrorKind::FileTooLarge,
+                "upload too large",
+            ));
+        }
+
+        let mut remaining = size;
+        while remaining > 0 {
+            let count = usize::try_from(remaining.min(buffer.len() as u64)).unwrap_or(buffer.len());
+            reader.read_exact(&mut buffer[..count])?;
+            received += count as u64;
+            remaining -= count as u64;
+        }
+        let mut terminator = [0_u8; 2];
+        reader.read_exact(&mut terminator)?;
+        if terminator != *b"\r\n" {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid chunk terminator",
+            ));
+        }
+    }
+
+    Ok(received)
+}
+
+fn upload_response(stream: &mut TcpStream, received: u64, seconds: f64) -> io::Result<()> {
+    let json = format!("{{\"bytes\":{received},\"seconds\":{:.6}}}", seconds);
     response(stream, 200, "application/json", json.as_bytes(), false)
 }
 
@@ -344,5 +416,15 @@ mod tests {
     fn content_hash_is_stable_and_content_sensitive() {
         assert_eq!(content_hash(b"speedtest"), "ce343323f90e7164");
         assert_ne!(content_hash(b"speedtest"), content_hash(b"Speedtest"));
+    }
+
+    #[test]
+    fn decodes_chunked_upload_bodies() {
+        let body = b"4\r\ntest\r\n6;extension=yes\r\nstream\r\n0\r\nX-Test: yes\r\n\r\n";
+        let mut reader = BufReader::new(Cursor::new(body));
+        assert_eq!(read_chunked_body(&mut reader).unwrap(), 10);
+
+        let mut invalid = BufReader::new(Cursor::new(b"4\r\ntestXX0\r\n\r\n"));
+        assert!(read_chunked_body(&mut invalid).is_err());
     }
 }

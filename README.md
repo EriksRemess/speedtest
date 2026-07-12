@@ -48,3 +48,18 @@ podman run --rm --network host ghcr.io/eriksremess/speedtest:latest
 ```
 
 Host networking is recommended on Linux so Podman port forwarding does not distort either direction of the measurement. To use a different web port, append `--http-port PORT` to the command.
+
+## Reverse proxy
+
+For streamed uploads through nginx, disable proxy buffering and allow the full timed request body:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+
+    client_max_body_size 2g;
+    proxy_request_buffering off;
+    proxy_buffering off;
+}
+```

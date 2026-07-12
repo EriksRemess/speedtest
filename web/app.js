@@ -141,7 +141,71 @@ async function transferDown() {
   return state.bytes * 8 / ((performance.now() - start) / 1000) / 1e6;
 }
 
+function supportsRequestStreams() {
+  try {
+    let duplexAccessed = false;
+    const request = new Request(location.href, {
+      method: "POST",
+      body: new ReadableStream(),
+      get duplex() {
+        duplexAccessed = true;
+        return "half";
+      },
+    });
+    return duplexAccessed && !request.headers.has("Content-Type");
+  } catch {
+    return false;
+  }
+}
+
 async function transferUp() {
+  if (supportsRequestStreams()) {
+    try {
+      return await transferUpStreamed();
+    } catch {
+      // Safari, HTTP/1.x, or an incompatible proxy uses the portable fallback.
+    }
+  }
+  return transferUpBatched();
+}
+
+async function transferUpStreamed() {
+  const block = new Uint8Array(256 * 1024);
+  const start = performance.now();
+  const state = { bytes: 0, lastDisplay: 0 };
+  show(0, "Testing upload", 0);
+
+  async function stream() {
+    const body = new ReadableStream({
+      pull(controller) {
+        const elapsed = performance.now() - start;
+        if (elapsed >= TEST_DURATION_MS) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(block);
+        state.bytes += block.byteLength;
+        updateTransferDisplay(state, elapsed, "Testing upload");
+      },
+    });
+    const response = await fetch(`/api/upload?n=${nonce()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body,
+      duplex: "half",
+    });
+    if (!response.ok) throw new Error("Streaming upload failed");
+    return (await response.json()).bytes;
+  }
+
+  const totals = await Promise.all(
+    Array.from({ length: TRANSFER_STREAMS }, stream),
+  );
+  const bytes = totals.reduce((sum, value) => sum + value, 0);
+  return bytes * 8 / ((performance.now() - start) / 1000) / 1e6;
+}
+
+async function transferUpBatched() {
   const minimumChunk = 256 * 1024;
   const maximumChunk = 16 * 1024 * 1024;
   const start = performance.now();
