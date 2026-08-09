@@ -37,17 +37,17 @@ The browser test measures median request latency, average variation between cons
 
 ## Container
 
-Build and run the static, unprivileged image with Podman:
+The ready-to-run image is published at `ghcr.io/eriksremess/speedtest:latest`. The `latest` tag tracks the repository's default branch.
+
+```sh
+podman run --rm --network host ghcr.io/eriksremess/speedtest:latest
+```
+
+To build the static, unprivileged image locally instead:
 
 ```sh
 podman build -t speedtest -f Containerfile .
 podman run --rm --network host speedtest
-```
-
-Or run the published image:
-
-```sh
-podman run --rm --network host ghcr.io/eriksremess/speedtest:latest
 ```
 
 Host networking is recommended on Linux so Podman port forwarding does not distort either direction of the measurement. To use a different web port, append `--http-port PORT` to the command.
