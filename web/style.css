@@ -34,6 +34,8 @@
 body {
   margin: 0;
   min-height: 100svh;
+  padding-right: env(safe-area-inset-right);
+  padding-left: env(safe-area-inset-left);
   background: var(--base);
 }
 button,
@@ -46,7 +48,7 @@ main {
   margin: auto;
   display: flex;
   flex-direction: column;
-  padding: 28px 0;
+  padding: 28px 0 calc(28px + env(safe-area-inset-bottom));
 }
 header,
 footer {
@@ -57,11 +59,16 @@ footer {
 header {
   height: 40px;
 }
-header strong {
+.brand {
+  color: var(--text);
   font-size: 22px;
   font-weight: 750;
   line-height: 1;
   letter-spacing: -.045em;
+  text-decoration: none;
+}
+.brand:hover {
+  color: var(--blue);
 }
 .header-actions {
   display: flex;
@@ -123,7 +130,7 @@ header strong {
   border-color: var(--overlay);
 }
 .test {
-  margin-top: 48px;
+  margin-top: 22px;
   border-top: 1px solid var(--surface);
   padding-top: 22px;
 }
@@ -596,7 +603,7 @@ footer {
     padding: 18px 0;
   }
   .test {
-    margin-top: 36px;
+    margin-top: 22px;
   }
   .results-page {
     margin-top: 36px;
