@@ -426,7 +426,9 @@ footer {
   fill: currentColor;
 }
 .results-page {
-  margin-top: 48px;
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid var(--surface);
 }
 .results-heading {
   display: flex;
@@ -600,13 +602,10 @@ footer {
 @media (max-width:520px) {
   main {
     width: min(100% - 24px,720px);
-    padding: 18px 0;
+    padding: 18px 0 calc(18px + env(safe-area-inset-bottom));
   }
   .test {
     margin-top: 22px;
-  }
-  .results-page {
-    margin-top: 36px;
   }
   .results-table-wrap {
     overflow: visible;
