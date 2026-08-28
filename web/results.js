@@ -1,6 +1,6 @@
-const RESULTS_KEY = "speedtest-results";
+const RESULTS_KEY = "results";
 const PAGE_SIZE = 10;
-const DATE_FORMAT = new Intl.DateTimeFormat("en-GB", {
+const DATE_FORMAT = new Intl.DateTimeFormat(i18n.locale(), {
   day: "2-digit",
   month: "short",
   year: "numeric",
@@ -46,7 +46,7 @@ function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
   ui.theme.setAttribute(
     "aria-label",
-    `Switch to ${theme === "mocha" ? "Latte" : "Mocha"} theme`,
+    i18n._("theme.switch", { theme: theme === "mocha" ? "Latte" : "Mocha" }),
   );
   try {
     localStorage.setItem("theme", theme);
@@ -87,15 +87,55 @@ function metric(value) {
   return value.toFixed(value < 100 ? 1 : 0);
 }
 
-function row(result) {
+function rows(result, index) {
   const tr = document.createElement("tr");
+  tr.className = "result-row";
   const date = document.createElement("td");
-  const dateText = document.createElement("span");
-  dateText.className = "result-date";
-  dateText.textContent = DATE_FORMAT.format(new Date(result.timestamp));
-  date.append(dateText);
-  tr.append(date);
+  const dateText = DATE_FORMAT.format(new Date(result.timestamp));
+  if (hasSpeedSamples(result)) {
+    const chartId = `result-chart-${index}`;
+    const toggle = document.createElement("button");
+    toggle.className = "result-toggle";
+    toggle.type = "button";
+    toggle.textContent = dateText;
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-controls", chartId);
+    date.append(toggle);
 
+    const detail = document.createElement("tr");
+    detail.className = "result-chart-row";
+    detail.hidden = true;
+    const chartCell = document.createElement("td");
+    chartCell.colSpan = 5;
+    const chart = document.createElement("div");
+    chart.id = chartId;
+    chart.className = "saved-result-chart";
+    chartCell.append(chart);
+    detail.append(chartCell);
+    const toggleDetail = () => {
+      detail.hidden = !detail.hidden;
+      tr.classList.toggle("expanded", !detail.hidden);
+      toggle.setAttribute("aria-expanded", String(!detail.hidden));
+      if (!detail.hidden && chart.childElementCount === 0) {
+        renderSpeedChart(chart, result);
+      }
+    };
+    tr.addEventListener("click", toggleDetail);
+    tr.append(date);
+    appendMetrics(tr, result);
+    return [tr, detail];
+  }
+
+  const plainDate = document.createElement("span");
+  plainDate.className = "result-date";
+  plainDate.textContent = dateText;
+  date.append(plainDate);
+  tr.append(date);
+  appendMetrics(tr, result);
+  return [tr];
+}
+
+function appendMetrics(tr, result) {
   for (
     const key of [
       "latency",
@@ -105,10 +145,21 @@ function row(result) {
     ]
   ) {
     const cell = document.createElement("td");
-    cell.textContent = metric(result[key]);
+    cell.dataset.label = i18n._(`metric.${key}`);
+    if (key === "download" || key === "upload") {
+      const rate = i18n.rate(result[key]);
+      const unit = document.createElement("small");
+      unit.className = "result-unit";
+      unit.textContent = rate.unit;
+      cell.append(rate.number, " ", unit);
+    } else {
+      const unit = document.createElement("small");
+      unit.className = "result-time-unit";
+      unit.textContent = "ms";
+      cell.append(metric(result[key]), " ", unit);
+    }
     tr.append(cell);
   }
-  return tr;
 }
 
 function render() {
@@ -126,7 +177,9 @@ function render() {
   currentPage = Math.min(currentPage, pageCount);
   const start = (currentPage - 1) * PAGE_SIZE;
   ui.results.replaceChildren(
-    ...results.slice(start, start + PAGE_SIZE).map(row),
+    ...results.slice(start, start + PAGE_SIZE).flatMap((result, index) =>
+      rows(result, start + index)
+    ),
   );
 
   const empty = results.length === 0;
@@ -136,7 +189,10 @@ function render() {
   ui.clear.disabled = empty;
   ui.previous.disabled = currentPage === 1;
   ui.next.disabled = currentPage === pageCount;
-  ui.page.textContent = `Page ${currentPage} of ${pageCount}`;
+  ui.page.textContent = i18n._("results.page", {
+    current: currentPage,
+    total: pageCount,
+  });
   for (const button of ui.sortButtons) {
     const active = button.dataset.sort === sortKey;
     const header = button.closest("th");
@@ -175,7 +231,7 @@ ui.next.addEventListener("click", () => {
   render();
 });
 ui.clear.addEventListener("click", () => {
-  if (!confirm("Clear all saved results?")) return;
+  if (!confirm(i18n._("results.clearConfirm"))) return;
   try {
     localStorage.removeItem(RESULTS_KEY);
   } catch {

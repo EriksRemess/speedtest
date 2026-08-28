@@ -4,15 +4,16 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="dark light">
-    <title>Results · Speedtest</title>
+    <title data-i18n="page.resultsTitle">Results · Speedtest</title>
     <link rel="stylesheet" href="/style.css?hash=__STYLE_HASH__">
   </head>
   <body>
     <main>
       <header>
         <strong>Speedtest</strong>
-        <nav class="header-actions" aria-label="Site controls">
-          <a class="header-link" href="/">New test</a>
+        <nav class="header-actions" aria-label="Site controls"
+          data-i18n-aria-label="nav.controls">
+          <a class="header-link" href="/" data-i18n="nav.newTest">New test</a>
           <button class="theme" id="theme" type="button"
             aria-label="Switch color theme">
             <svg class="moon" viewBox="0 0 24 24" aria-hidden="true">
@@ -30,28 +31,29 @@
 
       <section class="results-page">
         <div class="results-heading">
-          <h1>Results</h1>
+          <h1 data-i18n="results.title">Results</h1>
           <button class="secondary-button" id="clear"
-            type="button">Clear</button>
+            type="button" data-i18n="results.clear">Clear</button>
         </div>
-        <p class="storage-note">Stored only in this browser.</p>
+        <p class="storage-note" data-i18n="results.storage">Stored only in this browser.</p>
 
-        <p class="empty-results" id="empty" hidden>No saved tests yet.</p>
+        <p class="empty-results" id="empty" hidden
+          data-i18n="results.empty">No saved tests yet.</p>
         <div class="results-table-wrap" id="table-wrap" hidden>
           <table class="results-table">
             <thead>
               <tr>
                 <th
                   scope="col"><button class="sort-button" data-sort="timestamp"
-                    type="button">Date</button></th>
+                    type="button" data-i18n="results.date">Date</button></th>
                 <th scope="col"><button class="sort-button" data-sort="latency"
-                    type="button">Latency<small>ms</small></button></th>
+                    type="button"><span data-i18n="metric.latency">Latency</span><small>ms</small></button></th>
                 <th scope="col"><button class="sort-button" data-sort="jitter"
-                    type="button">Jitter<small>ms</small></button></th>
+                    type="button"><span data-i18n="metric.jitter">Jitter</span><small>ms</small></button></th>
                 <th scope="col"><button class="sort-button" data-sort="download"
-                    type="button">Download<small>Mbps</small></button></th>
+                    type="button"><span data-i18n="metric.download">Download</span></button></th>
                 <th scope="col"><button class="sort-button" data-sort="upload"
-                    type="button">Upload<small>Mbps</small></button></th>
+                    type="button"><span data-i18n="metric.upload">Upload</span></button></th>
               </tr>
             </thead>
             <tbody id="results"></tbody>
@@ -59,11 +61,13 @@
         </div>
 
         <nav class="pagination" id="pagination" aria-label="Results pages"
+          data-i18n-aria-label="results.pages"
           hidden>
           <button class="secondary-button" id="previous"
-            type="button">Previous</button>
+            type="button" data-i18n="results.previous">Previous</button>
           <span id="page"></span>
-          <button class="secondary-button" id="next" type="button">Next</button>
+          <button class="secondary-button" id="next" type="button"
+            data-i18n="results.next">Next</button>
         </nav>
       </section>
 
@@ -76,9 +80,22 @@
           </svg>
           <span>EriksRemess/speedtest</span>
         </a>
-        <span id="host"></span>
+        <div class="footer-meta">
+          <span id="host"></span>
+          <label class="language-selector">
+            <span class="visually-hidden" data-i18n="language.label">Language</span>
+            <select id="language" data-i18n-aria-label="language.label">
+              <option value="en" lang="en">English</option>
+              <option value="lv" lang="lv">Latviešu</option>
+            </select>
+          </label>
+        </div>
       </footer>
     </main>
+    <script src="/locales/en.js?hash=__LOCALE_EN_HASH__" defer></script>
+    <script src="/locales/lv.js?hash=__LOCALE_LV_HASH__" defer></script>
+    <script src="/i18n.js?hash=__I18N_HASH__" defer></script>
+    <script src="/chart.js?hash=__CHART_HASH__" defer></script>
     <script src="/results.js?hash=__RESULTS_HASH__" defer></script>
   </body>
 </html>

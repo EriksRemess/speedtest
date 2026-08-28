@@ -4,15 +4,17 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="dark light">
-    <title>Speedtest</title>
+    <title data-i18n="page.testTitle">Speedtest</title>
     <link rel="stylesheet" href="/style.css?hash=__STYLE_HASH__">
   </head>
   <body>
     <main>
       <header>
         <strong>Speedtest</strong>
-        <nav class="header-actions" aria-label="Site controls">
-          <a class="header-link" href="/results">Results</a>
+        <nav class="header-actions" aria-label="Site controls"
+          data-i18n-aria-label="nav.controls">
+          <a class="header-link" href="/results"
+            data-i18n="nav.results">Results</a>
           <button class="theme" id="theme" type="button"
             aria-label="Switch color theme">
             <svg class="moon" viewBox="0 0 24 24" aria-hidden="true">
@@ -28,29 +30,34 @@
         </nav>
       </header>
       <section class="test" aria-live="polite">
-        <ol class="stages" aria-label="Test stages">
-          <li id="stage-latency"><b>1</b><span>Latency</span></li>
-          <li id="stage-download"><b>2</b><span>Download</span></li>
-          <li id="stage-upload"><b>3</b><span>Upload</span></li>
+        <ol class="stages" aria-label="Test stages"
+          data-i18n-aria-label="test.stages">
+          <li id="stage-latency"><b>1</b><span
+              data-i18n="metric.latency">Latency</span></li>
+          <li id="stage-download"><b>2</b><span
+              data-i18n="metric.download">Download</span></li>
+          <li id="stage-upload"><b>3</b><span
+              data-i18n="metric.upload">Upload</span></li>
         </ol>
         <div class="reading" id="reading" hidden>
           <div><strong id="speed">—</strong> <small id="unit">Mbps</small></div>
-          <span id="phase">Ready</span>
+          <span id="phase" data-i18n="status.ready">Ready</span>
         </div>
         <div class="progress" id="progress-track" aria-hidden="true" hidden>
           <i id="progress"></i>
         </div>
-        <button id="start"><span>Start test</span></button>
+        <button id="start"><span data-i18n="test.start">Start test</span></button>
         <div class="metrics" id="metrics" hidden>
-          <article><span>Latency</span><div><strong id="latency">—</strong><small>ms</small></div></article>
-          <article><span>Jitter</span><div><strong id="jitter">—</strong><small>ms</small></div></article>
-          <article><span>Download</span><div><strong id="download">—</strong><small>Mbps</small></div></article>
-          <article><span>Upload</span><div><strong id="upload">—</strong><small>Mbps</small></div></article>
+          <article><span data-i18n="metric.latency">Latency</span><div><strong id="latency">—</strong><small>ms</small></div></article>
+          <article><span data-i18n="metric.jitter">Jitter</span><div><strong id="jitter">—</strong><small>ms</small></div></article>
+          <article><span data-i18n="metric.download">Download</span><div><strong id="download">—</strong><small id="download-unit">Mbps</small></div></article>
+          <article><span data-i18n="metric.upload">Upload</span><div><strong id="upload">—</strong><small id="upload-unit">Mbps</small></div></article>
         </div>
+        <section class="result-chart" id="result-chart" hidden></section>
         <div class="result-actions" id="result-actions" hidden>
           <span id="upload-mode"></span>
           <button class="secondary-button copy-result" id="copy-result"
-            type="button">Copy result</button>
+            type="button" data-i18n="copy.result">Copy result</button>
         </div>
       </section>
       <footer>
@@ -62,9 +69,22 @@
           </svg>
           <span>EriksRemess/speedtest</span>
         </a>
-        <span id="host"></span>
+        <div class="footer-meta">
+          <span id="host"></span>
+          <label class="language-selector">
+            <span class="visually-hidden" data-i18n="language.label">Language</span>
+            <select id="language" data-i18n-aria-label="language.label">
+              <option value="en" lang="en">English</option>
+              <option value="lv" lang="lv">Latviešu</option>
+            </select>
+          </label>
+        </div>
       </footer>
     </main>
+    <script src="/locales/en.js?hash=__LOCALE_EN_HASH__" defer></script>
+    <script src="/locales/lv.js?hash=__LOCALE_LV_HASH__" defer></script>
+    <script src="/i18n.js?hash=__I18N_HASH__" defer></script>
+    <script src="/chart.js?hash=__CHART_HASH__" defer></script>
     <script src="/app.js?hash=__APP_HASH__" defer></script>
   </body>
 </html>

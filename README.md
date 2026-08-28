@@ -102,7 +102,7 @@ The same arguments work after the image name with Podman. In `compose.yaml`, use
 
 ## What it measures
 
-The browser test measures median request latency, average variation between consecutive latency samples (jitter), and streamed download and upload throughput. These are application-path measurements, so browser memory, HTTP framing, and runtime overhead are part of the result. Use iperf3 for lower-level network benchmarking.
+The browser test measures median request latency, average variation between consecutive latency samples (jitter), and streamed download and upload throughput. Completed tests include a graph of interval throughput sampled during each transfer. The interface is available in English and Latvian; the footer selector stores the language in a one-year `language` cookie. These are application-path measurements, so browser memory, HTTP framing, and runtime overhead are part of the result. Use iperf3 for lower-level network benchmarking.
 
 ## Build the container image
 

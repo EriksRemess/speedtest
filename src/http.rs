@@ -8,6 +8,10 @@ use std::time::{Duration, Instant};
 const INDEX: &[u8] = include_bytes!("../web/index.html");
 const RESULTS_INDEX: &[u8] = include_bytes!("../web/results.html");
 const STYLE: &[u8] = include_bytes!("../web/style.css");
+const LOCALE_EN: &[u8] = include_bytes!("../web/locales/en.js");
+const LOCALE_LV: &[u8] = include_bytes!("../web/locales/lv.js");
+const I18N_APP: &[u8] = include_bytes!("../web/i18n.js");
+const CHART_APP: &[u8] = include_bytes!("../web/chart.js");
 const APP: &[u8] = include_bytes!("../web/app.js");
 const RESULTS_APP: &[u8] = include_bytes!("../web/results.js");
 static RENDERED_INDEX: OnceLock<String> = OnceLock::new();
@@ -136,6 +140,30 @@ fn handle(mut stream: TcpStream) -> io::Result<()> {
             false,
         ),
         ("GET", "/style.css") => asset(&mut stream, target, "text/css; charset=utf-8", STYLE),
+        ("GET", "/locales/en.js") => asset(
+            &mut stream,
+            target,
+            "text/javascript; charset=utf-8",
+            LOCALE_EN,
+        ),
+        ("GET", "/locales/lv.js") => asset(
+            &mut stream,
+            target,
+            "text/javascript; charset=utf-8",
+            LOCALE_LV,
+        ),
+        ("GET", "/i18n.js") => asset(
+            &mut stream,
+            target,
+            "text/javascript; charset=utf-8",
+            I18N_APP,
+        ),
+        ("GET", "/chart.js") => asset(
+            &mut stream,
+            target,
+            "text/javascript; charset=utf-8",
+            CHART_APP,
+        ),
         ("GET", "/app.js") => asset(&mut stream, target, "text/javascript; charset=utf-8", APP),
         ("GET", "/results.js") => asset(
             &mut stream,
@@ -222,6 +250,10 @@ fn rendered_index() -> &'static str {
     RENDERED_INDEX.get_or_init(|| {
         String::from_utf8_lossy(INDEX)
             .replace("__STYLE_HASH__", &content_hash(STYLE))
+            .replace("__LOCALE_EN_HASH__", &content_hash(LOCALE_EN))
+            .replace("__LOCALE_LV_HASH__", &content_hash(LOCALE_LV))
+            .replace("__I18N_HASH__", &content_hash(I18N_APP))
+            .replace("__CHART_HASH__", &content_hash(CHART_APP))
             .replace("__APP_HASH__", &content_hash(APP))
     })
 }
@@ -230,6 +262,10 @@ fn rendered_results_index() -> &'static str {
     RENDERED_RESULTS_INDEX.get_or_init(|| {
         String::from_utf8_lossy(RESULTS_INDEX)
             .replace("__STYLE_HASH__", &content_hash(STYLE))
+            .replace("__LOCALE_EN_HASH__", &content_hash(LOCALE_EN))
+            .replace("__LOCALE_LV_HASH__", &content_hash(LOCALE_LV))
+            .replace("__I18N_HASH__", &content_hash(I18N_APP))
+            .replace("__CHART_HASH__", &content_hash(CHART_APP))
             .replace("__RESULTS_HASH__", &content_hash(RESULTS_APP))
     })
 }
@@ -402,13 +438,29 @@ mod tests {
     fn rendered_index_contains_content_hashes() {
         let index = rendered_index();
         assert!(!index.contains("__STYLE_HASH__"));
+        assert!(!index.contains("__LOCALE_EN_HASH__"));
+        assert!(!index.contains("__LOCALE_LV_HASH__"));
+        assert!(!index.contains("__I18N_HASH__"));
+        assert!(!index.contains("__CHART_HASH__"));
         assert!(!index.contains("__APP_HASH__"));
         assert!(index.contains(&format!("style.css?hash={}", content_hash(STYLE))));
+        assert!(index.contains(&format!("locales/en.js?hash={}", content_hash(LOCALE_EN))));
+        assert!(index.contains(&format!("locales/lv.js?hash={}", content_hash(LOCALE_LV))));
+        assert!(index.contains(&format!("i18n.js?hash={}", content_hash(I18N_APP))));
+        assert!(index.contains(&format!("chart.js?hash={}", content_hash(CHART_APP))));
         assert!(index.contains(&format!("app.js?hash={}", content_hash(APP))));
 
         let results = rendered_results_index();
         assert!(!results.contains("__STYLE_HASH__"));
+        assert!(!results.contains("__LOCALE_EN_HASH__"));
+        assert!(!results.contains("__LOCALE_LV_HASH__"));
+        assert!(!results.contains("__I18N_HASH__"));
+        assert!(!results.contains("__CHART_HASH__"));
         assert!(!results.contains("__RESULTS_HASH__"));
+        assert!(results.contains(&format!("locales/en.js?hash={}", content_hash(LOCALE_EN))));
+        assert!(results.contains(&format!("locales/lv.js?hash={}", content_hash(LOCALE_LV))));
+        assert!(results.contains(&format!("i18n.js?hash={}", content_hash(I18N_APP))));
+        assert!(results.contains(&format!("chart.js?hash={}", content_hash(CHART_APP))));
         assert!(results.contains(&format!("results.js?hash={}", content_hash(RESULTS_APP))));
     }
 
