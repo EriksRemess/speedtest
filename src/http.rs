@@ -71,23 +71,87 @@ fn worker(receiver: Arc<Mutex<Receiver<TcpStream>>>) {
     }
 }
 
-fn handle(mut stream: TcpStream) -> io::Result<()> {
+// Socket timeouts alone reset on every read/write, allowing trickle traffic
+// to occupy every worker indefinitely. Share one deadline for the whole request.
+struct DeadlineStream {
+    stream: TcpStream,
+    deadline: Instant,
+}
+
+impl DeadlineStream {
+    fn remaining(&self) -> io::Result<Duration> {
+        let remaining = self.deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "HTTP request deadline exceeded",
+            ));
+        }
+        Ok(remaining)
+    }
+}
+
+impl Read for DeadlineStream {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        self.stream.set_read_timeout(Some(self.remaining()?))?;
+        self.stream.read(buffer)
+    }
+}
+
+impl Write for DeadlineStream {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.stream.set_write_timeout(Some(self.remaining()?))?;
+        self.stream.write(buffer)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
+    }
+}
+
+fn handle(stream: TcpStream) -> io::Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
     stream.set_write_timeout(Some(Duration::from_secs(30)))?;
     stream.set_nodelay(true)?;
 
-    let mut reader = BufReader::new(stream.try_clone()?);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut reader = BufReader::new(DeadlineStream {
+        stream: stream.try_clone()?,
+        deadline,
+    });
+    let mut stream = DeadlineStream { stream, deadline };
     let request_line = match read_line_limited(&mut reader, MAX_HEADER) {
         Ok(line) => line,
-        Err(error) if error.kind() == io::ErrorKind::InvalidData => {
+        Err(error) if error.kind() == io::ErrorKind::FileTooLarge => {
             return response(&mut stream, 431, "text/plain", b"headers too large", false);
+        }
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof
+            ) =>
+        {
+            return response(&mut stream, 400, "text/plain", b"invalid request", false);
         }
         Err(error) => return Err(error),
     };
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("");
-    let mut content_length = 0_u64;
+    let version = parts.next().unwrap_or("");
+    if !matches!(version, "HTTP/1.0" | "HTTP/1.1")
+        || parts.next().is_some()
+        || !target.starts_with('/')
+    {
+        return response(
+            &mut stream,
+            400,
+            "text/plain",
+            b"invalid request line",
+            false,
+        );
+    }
+    let mut content_length = None;
     let mut chunked_body = false;
     let mut expect_continue = false;
     let mut header_bytes = request_line.len();
@@ -96,8 +160,16 @@ fn handle(mut stream: TcpStream) -> io::Result<()> {
         let remaining = MAX_HEADER.saturating_sub(header_bytes);
         let line = match read_line_limited(&mut reader, remaining) {
             Ok(line) => line,
-            Err(error) if error.kind() == io::ErrorKind::InvalidData => {
+            Err(error) if error.kind() == io::ErrorKind::FileTooLarge => {
                 return response(&mut stream, 431, "text/plain", b"headers too large", false);
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof
+                ) =>
+            {
+                return response(&mut stream, 400, "text/plain", b"invalid headers", false);
             }
             Err(error) => return Err(error),
         };
@@ -108,20 +180,82 @@ fn handle(mut stream: TcpStream) -> io::Result<()> {
         if line == "\r\n" || line == "\n" || line.is_empty() {
             break;
         }
-        if let Some((name, value)) = line.split_once(':') {
-            if name.eq_ignore_ascii_case("content-length") {
-                content_length = value.trim().parse().unwrap_or(u64::MAX);
-            } else if name.eq_ignore_ascii_case("transfer-encoding") {
-                chunked_body = value
-                    .split(',')
-                    .any(|encoding| encoding.trim().eq_ignore_ascii_case("chunked"));
-            } else if name.eq_ignore_ascii_case("expect")
-                && value.trim().eq_ignore_ascii_case("100-continue")
+        let Some((name, value)) = line.split_once(':') else {
+            return response(&mut stream, 400, "text/plain", b"invalid header", false);
+        };
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
+        {
+            return response(
+                &mut stream,
+                400,
+                "text/plain",
+                b"invalid header name",
+                false,
+            );
+        }
+        let value = value.trim();
+        if name.eq_ignore_ascii_case("content-length") {
+            if content_length.is_some()
+                || value.is_empty()
+                || !value.bytes().all(|b| b.is_ascii_digit())
             {
-                expect_continue = true;
+                return response(
+                    &mut stream,
+                    400,
+                    "text/plain",
+                    b"invalid content length",
+                    false,
+                );
             }
+            content_length = match value.parse::<u64>() {
+                Ok(length) => Some(length),
+                Err(_) => {
+                    return response(
+                        &mut stream,
+                        400,
+                        "text/plain",
+                        b"invalid content length",
+                        false,
+                    );
+                }
+            };
+        } else if name.eq_ignore_ascii_case("transfer-encoding") {
+            if chunked_body || !value.eq_ignore_ascii_case("chunked") || version != "HTTP/1.1" {
+                return response(
+                    &mut stream,
+                    400,
+                    "text/plain",
+                    b"unsupported transfer encoding",
+                    false,
+                );
+            }
+            chunked_body = true;
+        } else if name.eq_ignore_ascii_case("expect") {
+            if !value.eq_ignore_ascii_case("100-continue") {
+                return response(
+                    &mut stream,
+                    417,
+                    "text/plain",
+                    b"unsupported expectation",
+                    false,
+                );
+            }
+            expect_continue = true;
         }
     }
+    if chunked_body && content_length.is_some() {
+        return response(
+            &mut stream,
+            400,
+            "text/plain",
+            b"ambiguous body framing",
+            false,
+        );
+    }
+    let content_length = content_length.unwrap_or(0);
 
     let path = target.split('?').next().unwrap_or(target);
     match (method, path) {
@@ -216,7 +350,10 @@ fn read_line_limited(reader: &mut impl BufRead, limit: usize) -> io::Result<Stri
     loop {
         let available = reader.fill_buf()?;
         if available.is_empty() {
-            break;
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "incomplete HTTP line",
+            ));
         }
         let count = available
             .iter()
@@ -224,7 +361,7 @@ fn read_line_limited(reader: &mut impl BufRead, limit: usize) -> io::Result<Stri
             .map_or(available.len(), |position| position + 1);
         if line.len().saturating_add(count) > limit {
             return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
+                io::ErrorKind::FileTooLarge,
                 "HTTP header line exceeds limit",
             ));
         }
@@ -238,7 +375,7 @@ fn read_line_limited(reader: &mut impl BufRead, limit: usize) -> io::Result<Stri
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "HTTP headers are not UTF-8"))
 }
 
-fn asset(stream: &mut TcpStream, target: &str, kind: &str, content: &[u8]) -> io::Result<()> {
+fn asset(stream: &mut impl Write, target: &str, kind: &str, content: &[u8]) -> io::Result<()> {
     match query_value(target, "hash") {
         Some(hash) if hash == content_hash(content) => response(stream, 200, kind, content, true),
         Some(_) => response(stream, 404, "text/plain", b"asset not found", false),
@@ -281,7 +418,7 @@ fn content_hash(content: &[u8]) -> String {
 }
 
 fn response(
-    stream: &mut TcpStream,
+    stream: &mut impl Write,
     status: u16,
     kind: &str,
     body: &[u8],
@@ -289,7 +426,9 @@ fn response(
 ) -> io::Result<()> {
     let reason = match status {
         200 => "OK",
+        400 => "Bad Request",
         404 => "Not Found",
+        417 => "Expectation Failed",
         413 => "Payload Too Large",
         431 => "Request Header Fields Too Large",
         _ => "Error",
@@ -307,7 +446,7 @@ fn response(
     stream.write_all(body)
 }
 
-fn download(stream: &mut TcpStream, size: usize) -> io::Result<()> {
+fn download(stream: &mut impl Write, size: usize) -> io::Result<()> {
     write!(
         stream,
         "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {size}\r\nCache-Control: no-store\r\nContent-Encoding: identity\r\nConnection: close\r\n\r\n"
@@ -322,7 +461,7 @@ fn download(stream: &mut TcpStream, size: usize) -> io::Result<()> {
     Ok(())
 }
 
-fn upload(stream: &mut TcpStream, reader: &mut impl Read, size: u64) -> io::Result<()> {
+fn upload(stream: &mut impl Write, reader: &mut impl Read, size: u64) -> io::Result<()> {
     let started = Instant::now();
     let mut received = 0_u64;
     let mut buffer = [0_u8; 128 * 1024];
@@ -330,19 +469,27 @@ fn upload(stream: &mut TcpStream, reader: &mut impl Read, size: u64) -> io::Resu
         let count = ((size - received) as usize).min(buffer.len());
         let read = reader.read(&mut buffer[..count])?;
         if read == 0 {
-            break;
+            return response(stream, 400, "text/plain", b"incomplete upload", false);
         }
         received += read as u64;
     }
     upload_response(stream, received, started.elapsed().as_secs_f64())
 }
 
-fn upload_chunked(stream: &mut TcpStream, reader: &mut impl BufRead) -> io::Result<()> {
+fn upload_chunked(stream: &mut impl Write, reader: &mut impl BufRead) -> io::Result<()> {
     let started = Instant::now();
     let received = match read_chunked_body(reader) {
         Ok(received) => received,
         Err(error) if error.kind() == io::ErrorKind::FileTooLarge => {
             return response(stream, 413, "text/plain", b"upload too large", false);
+        }
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof
+            ) =>
+        {
+            return response(stream, 400, "text/plain", b"invalid chunked upload", false);
         }
         Err(error) => return Err(error),
     };
@@ -362,9 +509,11 @@ fn read_chunked_body(reader: &mut impl BufRead) -> io::Result<u64> {
             .and_then(|value| u64::from_str_radix(value, 16).ok())
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "invalid chunk size"))?;
         if size == 0 {
+            let mut remaining = MAX_HEADER;
             loop {
-                let trailer = read_line_limited(reader, MAX_HEADER)?;
-                if trailer == "\r\n" || trailer == "\n" || trailer.is_empty() {
+                let trailer = read_line_limited(reader, remaining)?;
+                remaining -= trailer.len();
+                if trailer == "\r\n" || trailer == "\n" {
                     break;
                 }
             }
@@ -397,7 +546,7 @@ fn read_chunked_body(reader: &mut impl BufRead) -> io::Result<u64> {
     Ok(received)
 }
 
-fn upload_response(stream: &mut TcpStream, received: u64, seconds: f64) -> io::Result<()> {
+fn upload_response(stream: &mut impl Write, received: u64, seconds: f64) -> io::Result<()> {
     let json = format!("{{\"bytes\":{received},\"seconds\":{:.6}}}", seconds);
     response(stream, 200, "application/json", json.as_bytes(), false)
 }
@@ -422,6 +571,92 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
+    fn request(raw: &[u8]) -> String {
+        use std::net::Shutdown;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let (server, _) = listener.accept().unwrap();
+        let worker = thread::spawn(move || handle(server));
+        client.write_all(raw).unwrap();
+        client.shutdown(Shutdown::Write).unwrap();
+        let mut response = String::new();
+        client.read_to_string(&mut response).unwrap();
+        worker.join().unwrap().unwrap();
+        response
+    }
+
+    #[test]
+    fn rejects_ambiguous_and_invalid_request_framing() {
+        for headers in [
+            "Content-Length: 1\r\nContent-Length: 2",
+            "Content-Length: 0\r\nTransfer-Encoding: chunked",
+            "Content-Length: +1",
+            "Content-Length: nope",
+            "Content-Length : 0",
+            "Transfer-Encoding: chunked, gzip",
+            "Transfer-Encoding: chunked\r\nTransfer-Encoding: chunked",
+            "Invalid header",
+        ] {
+            let raw = format!("POST /api/upload HTTP/1.1\r\n{headers}\r\n\r\n");
+            assert!(
+                request(raw.as_bytes()).starts_with("HTTP/1.1 400"),
+                "{headers}"
+            );
+        }
+        assert!(request(b"GET /health\r\n\r\n").starts_with("HTTP/1.1 400"));
+        assert!(request(b"GET /health HTTP/1.1\r\n").starts_with("HTTP/1.1 400"));
+    }
+
+    #[test]
+    fn only_complete_uploads_succeed() {
+        assert!(
+            request(b"POST /api/upload HTTP/1.1\r\nContent-Length: 5\r\n\r\nabc")
+                .starts_with("HTTP/1.1 400")
+        );
+        let fixed = request(b"POST /api/upload HTTP/1.1\r\nContent-Length: 3\r\n\r\nabc");
+        assert!(fixed.starts_with("HTTP/1.1 200"));
+        assert!(fixed.contains("\"bytes\":3"));
+        let chunked = request(
+            b"POST /api/upload HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n\r\n",
+        );
+        assert!(chunked.starts_with("HTTP/1.1 200"));
+        assert!(chunked.contains("\"bytes\":3"));
+    }
+
+    #[test]
+    fn chunked_trailers_are_bounded_and_must_terminate() {
+        for raw in [b"0\r\n".as_slice(), b"0\r\nX-Test: yes\r\n", b"3\r\nab"] {
+            assert!(read_chunked_body(&mut Cursor::new(raw)).is_err());
+        }
+        let raw = format!("0\r\n{}\r\n", "X-Test: value\r\n".repeat(MAX_HEADER / 10));
+        assert_eq!(
+            read_chunked_body(&mut Cursor::new(raw)).unwrap_err().kind(),
+            io::ErrorKind::FileTooLarge
+        );
+    }
+
+    #[test]
+    fn expired_request_deadline_prevents_further_io() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let _client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (stream, _) = listener.accept().unwrap();
+        let mut stream = DeadlineStream {
+            stream,
+            deadline: Instant::now(),
+        };
+        assert_eq!(
+            stream.read(&mut [0]).unwrap_err().kind(),
+            io::ErrorKind::TimedOut
+        );
+        assert_eq!(
+            stream.write(b"x").unwrap_err().kind(),
+            io::ErrorKind::TimedOut
+        );
+    }
+
     #[test]
     fn header_line_limit_is_enforced_during_read() {
         let mut reader = BufReader::new(Cursor::new(b"123456789\n"));
@@ -430,7 +665,7 @@ mod tests {
         let mut reader = BufReader::new(Cursor::new(b"1234567890\n"));
         assert_eq!(
             read_line_limited(&mut reader, 10).unwrap_err().kind(),
-            io::ErrorKind::InvalidData
+            io::ErrorKind::FileTooLarge
         );
     }
 

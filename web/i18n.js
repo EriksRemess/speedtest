@@ -39,12 +39,12 @@ function detectLanguage() {
   try {
     cookie = document.cookie.split(";").map((part) => part.trim())
       .find((part) => part.startsWith(`${COOKIE}=`));
+    if (cookie) {
+      const value = decodeURIComponent(cookie.slice(COOKIE.length + 1));
+      if (LANGUAGES.includes(value)) return value;
+    }
   } catch {
-    // Cookie restrictions should not prevent language detection.
-  }
-  if (cookie) {
-    const value = decodeURIComponent(cookie.slice(COOKIE.length + 1));
-    if (LANGUAGES.includes(value)) return value;
+    // Restricted or malformed cookies must not prevent language detection.
   }
   return navigator.language.toLowerCase().startsWith("lv") ? "lv" : "en";
 }

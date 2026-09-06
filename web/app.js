@@ -32,6 +32,7 @@ const DURATION_MS = 5_000;
 const DISPLAY_MS = 100;
 const SAMPLE_MS = 250;
 const STREAMS = 4;
+const REQUEST_TIMEOUT_MS = 15_000;
 const RESULTS_KEY = "results";
 const MAX_RESULTS = 500;
 let currentResult = null;
@@ -107,11 +108,52 @@ function setStage(name, state) {
 function resetStages() {
   Object.values(ui.stages).forEach((stage) => stage.className = "");
 }
+// Abort and settle every peer before a failed stage can finish or fall back.
+async function runStreams(stream, timeout = REQUEST_TIMEOUT_MS, timedDownload = false) {
+  const controller = new AbortController();
+  let expired = false;
+  const timer = setTimeout(() => {
+    expired = true;
+    controller.abort(new Error(i18n._("error.timeout")));
+  }, timeout);
+  const tasks = Array.from({ length: STREAMS }, () =>
+    Promise.resolve().then(() => stream(controller.signal))
+  );
+  try {
+    return await Promise.all(tasks);
+  } catch (error) {
+    if (!timedDownload || !expired) throw error;
+    return [];
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+    await Promise.allSettled(tasks);
+  }
+}
+
+async function ping() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort(new Error(i18n._("error.timeout")));
+  }, REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`/api/ping?n=${nonce()}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok || (await response.json()).ok !== true) {
+      throw new Error(i18n._("error.latency"));
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function latency() {
   const samples = [];
   for (let i = 0; i < 10; i++) {
     const start = performance.now();
-    await fetch(`/api/ping?n=${nonce()}`, { cache: "no-store" });
+    await ping();
     samples.push(performance.now() - start);
     show(samples.at(-1), i18n._("status.testingLatency"), (i + 1) / 10 * 100, "ms");
     await pause(45);
@@ -121,7 +163,7 @@ async function latency() {
     (sum, value, index) => sum + Math.abs(value - samples[index]),
     0,
   ) / (samples.length - 1);
-  return { median: sorted[Math.floor(sorted.length / 2)], jitter };
+  return { median: (sorted[4] + sorted[5]) / 2, jitter };
 }
 async function transferDown() {
   const requestSize = 512 * 1024 * 1024;
@@ -129,11 +171,11 @@ async function transferDown() {
   const state = transferState();
   show(0, i18n._("status.testingDownload"), 0);
 
-  async function stream() {
+  async function stream(signal) {
     while (performance.now() - start < DURATION_MS) {
       const response = await fetch(
         `/api/download?size=${requestSize}&n=${nonce()}`,
-        { cache: "no-store" },
+        { cache: "no-store", signal },
       );
       if (!response.ok || !response.body) {
         throw new Error(i18n._("error.download"));
@@ -141,7 +183,7 @@ async function transferDown() {
       const reader = response.body.getReader();
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done || signal.aborted) break;
         state.bytes += value.byteLength;
         const elapsed = performance.now() - start;
         updateTransfer(state, elapsed, i18n._("status.testingDownload"));
@@ -153,7 +195,8 @@ async function transferDown() {
     }
   }
 
-  await Promise.all(Array.from({ length: STREAMS }, stream));
+  await runStreams(stream, DURATION_MS, true);
+  if (state.bytes === 0) throw new Error(i18n._("error.download"));
   return finishTransfer(state, start);
 }
 
@@ -191,9 +234,10 @@ async function transferUpStreamed() {
   const state = transferState();
   show(0, i18n._("status.testingUpload"), 0);
 
-  async function stream() {
+  async function stream(signal) {
     const body = new ReadableStream({
       pull(controller) {
+        signal.throwIfAborted();
         const elapsed = performance.now() - start;
         if (elapsed >= DURATION_MS) {
           controller.close();
@@ -206,6 +250,7 @@ async function transferUpStreamed() {
     });
     const response = await fetch(`/api/upload?n=${nonce()}`, {
       method: "POST",
+      signal,
       headers: { "Content-Type": "application/octet-stream" },
       body,
       duplex: "half",
@@ -214,9 +259,7 @@ async function transferUpStreamed() {
     return (await response.json()).bytes;
   }
 
-  const totals = await Promise.all(
-    Array.from({ length: STREAMS }, stream),
-  );
+  const totals = await runStreams(stream);
   const bytes = totals.reduce((sum, value) => sum + value, 0);
   return finishTransfer(state, start, bytes);
 }
@@ -228,11 +271,12 @@ async function transferUpBatched() {
   const state = transferState();
   show(0, i18n._("status.testingUpload"), 0);
 
-  async function stream() {
+  async function stream(signal) {
     let chunkSize = minChunk;
     while (performance.now() - start < DURATION_MS) {
       const response = await fetch(`/api/upload?n=${nonce()}`, {
         method: "POST",
+        signal,
         headers: { "Content-Type": "application/octet-stream" },
         body: new Uint8Array(chunkSize),
       });
@@ -251,7 +295,7 @@ async function transferUpBatched() {
     }
   }
 
-  await Promise.all(Array.from({ length: STREAMS }, stream));
+  await runStreams(stream);
   return finishTransfer(state, start);
 }
 
@@ -322,8 +366,12 @@ function resultText(result) {
 
 async function copyText(text) {
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // A denied Clipboard API may still permit the user-initiated fallback.
+    }
   }
   const textarea = document.createElement("textarea");
   textarea.value = text;
@@ -331,8 +379,11 @@ async function copyText(text) {
   textarea.style.opacity = "0";
   document.body.append(textarea);
   textarea.select();
-  document.execCommand("copy");
-  textarea.remove();
+  try {
+    if (!document.execCommand("copy")) throw new Error(i18n._("copy.failed"));
+  } finally {
+    textarea.remove();
+  }
 }
 
 ui.copyResult.addEventListener("click", async () => {
@@ -366,10 +417,10 @@ ui.start.addEventListener("click", async () => {
   try {
     setStage("latency", "active");
     show(NaN, i18n._("status.warmingUp"), 0, "ms");
-    await fetch(`/api/ping?n=${nonce()}`, { cache: "no-store" });
-    const ping = await latency();
-    ui.latency.textContent = ping.median.toFixed(1);
-    ui.jitter.textContent = ping.jitter.toFixed(1);
+    await ping();
+    const timing = await latency();
+    ui.latency.textContent = timing.median.toFixed(1);
+    ui.jitter.textContent = timing.jitter.toFixed(1);
     setStage("latency", "done");
     setStage("download", "active");
     const download = await transferDown();
@@ -384,8 +435,8 @@ ui.start.addEventListener("click", async () => {
     setStage("upload", "done");
     currentResult = {
       timestamp: new Date().toISOString(),
-      latency: ping.median,
-      jitter: ping.jitter,
+      latency: timing.median,
+      jitter: timing.jitter,
       download: down,
       upload: up,
       uploadMode: upload.mode,

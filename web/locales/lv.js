@@ -22,6 +22,8 @@ window.translations.lv = {
   "status.warmingUp": "Iesildīšanās",
   "status.complete": "Tests pabeigts",
   "status.failed": "Tests neizdevās",
+  "error.timeout": "Pieprasījuma gaidīšanas laiks ir beidzies. Mēģiniet vēlreiz.",
+  "error.latency": "Aiztures tests neizdevās",
   "error.download": "Lejupielāde neizdevās",
   "error.upload": "Augšupielāde neizdevās",
   "error.streamingUpload": "Straumētā augšupielāde neizdevās",

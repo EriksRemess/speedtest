@@ -78,8 +78,9 @@ function loadResults() {
 
 function validResult(result) {
   return result && typeof result.timestamp === "string" &&
+    Number.isFinite(Date.parse(result.timestamp)) &&
     ["latency", "jitter", "download", "upload"].every((key) =>
-      Number.isFinite(result[key])
+      Number.isFinite(result[key]) && result[key] >= 0
     );
 }
 

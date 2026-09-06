@@ -28,6 +28,7 @@ struct Parameters {
     streams: usize,
     reverse: bool,
     block_size: usize,
+    test_timeout: Duration,
 }
 
 #[derive(Clone)]
@@ -77,7 +78,9 @@ pub fn serve(listener: TcpListener) -> io::Result<()> {
         let (mut stream, peer) = listener.accept()?;
         stream.set_read_timeout(Some(COOKIE_TIMEOUT))?;
         let mut cookie = [0_u8; COOKIE_SIZE];
-        if let Err(error) = stream.read_exact(&mut cookie) {
+        if let Err(error) =
+            read_exact_until(&mut stream, &mut cookie, Instant::now() + COOKIE_TIMEOUT)
+        {
             eprintln!("iperf3 cookie from {peer} failed: {error}");
             continue;
         }
@@ -168,7 +171,7 @@ fn session(
         data.push(stream);
     }
 
-    control.set_read_timeout(Some(Duration::from_secs(120)))?;
+    control.set_read_timeout(Some(params.test_timeout))?;
     send_state(&mut control, TEST_START)?;
     send_state(&mut control, TEST_RUNNING)?;
     let running = Arc::new(AtomicBool::new(true));
@@ -198,6 +201,7 @@ fn session(
     let seconds = started.elapsed().as_secs_f64();
     let bytes = workers.finish();
 
+    control.set_read_timeout(Some(PARAMETER_TIMEOUT))?;
     send_state(&mut control, EXCHANGE_RESULTS)?;
     let _client_results = read_json(&mut control)?;
     write_json(&mut control, &results_json(&bytes, seconds, params.reverse))?;
@@ -292,10 +296,22 @@ fn parse_parameters(json: &str) -> io::Result<Parameters> {
             "invalid iperf3 block size",
         ));
     }
+    let time = json_number(&fields, "time")?.unwrap_or(10);
+    let omit = json_number(&fields, "omit")?.unwrap_or(0);
+    let duration = time
+        .checked_add(omit)
+        .filter(|duration| time >= 0 && omit >= 0 && *duration <= 86_400)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "test duration must be between 0 and 86400 seconds including omit",
+            )
+        })?;
     Ok(Parameters {
         streams: streams as usize,
         reverse: json_bool(&fields, "reverse")?.unwrap_or(false),
         block_size: block_size.clamp(1024, 1024 * 1024) as usize,
+        test_timeout: Duration::from_secs((duration as u64 + 30).max(120)),
     })
 }
 
@@ -490,9 +506,40 @@ fn send_server_error(stream: &mut TcpStream, code: i32, os_error: i32) -> io::Re
     stream.write_all(&os_error.to_be_bytes())
 }
 
+// Bound the entire frame, even when a peer sends one byte per socket timeout.
+fn read_exact_until(
+    stream: &mut TcpStream,
+    mut buffer: &mut [u8],
+    deadline: Instant,
+) -> io::Result<()> {
+    while !buffer.is_empty() {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "iperf3 frame deadline exceeded",
+            ));
+        }
+        stream.set_read_timeout(Some(remaining))?;
+        match stream.read(buffer) {
+            Ok(0) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "incomplete iperf3 frame",
+                ));
+            }
+            Ok(count) => buffer = &mut buffer[count..],
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
 fn read_json(stream: &mut TcpStream) -> io::Result<String> {
+    let deadline = Instant::now() + stream.read_timeout()?.unwrap_or(PARAMETER_TIMEOUT);
     let mut length = [0_u8; 4];
-    stream.read_exact(&mut length)?;
+    read_exact_until(stream, &mut length, deadline)?;
     let length = u32::from_be_bytes(length) as usize;
     if length == 0 || length > MAX_JSON {
         return Err(io::Error::new(
@@ -501,7 +548,7 @@ fn read_json(stream: &mut TcpStream) -> io::Result<String> {
         ));
     }
     let mut data = vec![0_u8; length];
-    stream.read_exact(&mut data)?;
+    read_exact_until(stream, &mut data, deadline)?;
     String::from_utf8(data)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "iperf3 JSON is not UTF-8"))
 }
@@ -525,6 +572,33 @@ mod tests {
         assert_eq!(parameters.streams, 4);
         assert!(parameters.reverse);
         assert_eq!(parameters.block_size, 65536);
+    }
+
+    #[test]
+    fn honors_long_test_duration_and_rejects_invalid_limits() {
+        let parameters = parse_parameters(r#"{"tcp":true,"time":300,"omit":5}"#).unwrap();
+        assert_eq!(parameters.test_timeout, Duration::from_secs(335));
+        for json in [
+            r#"{"tcp":true,"time":-1}"#,
+            r#"{"tcp":true,"omit":-1}"#,
+            r#"{"tcp":true,"time":86401}"#,
+            r#"{"tcp":true,"time":9223372036854775807,"omit":1}"#,
+        ] {
+            assert!(parse_parameters(json).is_err());
+        }
+    }
+
+    #[test]
+    fn expired_frame_deadline_prevents_reading() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let _client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (mut stream, _) = listener.accept().unwrap();
+        assert_eq!(
+            read_exact_until(&mut stream, &mut [0], Instant::now())
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::TimedOut
+        );
     }
 
     #[test]

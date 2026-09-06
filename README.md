@@ -74,7 +74,7 @@ iperf3 -c SERVER_ADDRESS -R
 iperf3 -c SERVER_ADDRESS -P 4
 ```
 
-It supports forward, reverse (`-R`), and parallel (`-P`) tests. UDP, SCTP, bidirectional mode, authentication, and advanced socket-tuning options are not supported. One iperf3 test runs at a time; the browser test remains available concurrently.
+It supports forward, reverse (`-R`), and parallel (`-P`) tests. UDP, SCTP, bidirectional mode, authentication, and advanced socket-tuning options are not supported. One iperf3 test runs at a time; the browser test remains available concurrently. Timed tests, including any omit period, can run for up to 24 hours. Byte- or block-limited tests must finish within 120 seconds.
 
 ## Configuration
 
@@ -133,6 +133,17 @@ location / {
     proxy_buffering off;
 }
 ```
+
+## Development checks
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --release
+node --test tests/*.test.js
+```
+
+The Rust tests bind loopback sockets. HTTP requests have a 30-second total deadline; browser transfers cancel outstanding requests on completion, failure, or timeout.
 
 ## Health check
 

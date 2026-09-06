@@ -24,7 +24,8 @@ jobs:
           cargo fmt --check
           cargo clippy --all-targets --all-features -- -D warnings
           cargo test --release
-          node --check web/app.js
+          for script in web/*.js web/locales/*.js; do node --check "$script"; done
+          node --test tests/*.test.js
 
       - name: Ensure Podman is available
         run: |

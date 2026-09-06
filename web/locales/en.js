@@ -22,6 +22,8 @@ window.translations.en = {
   "status.warmingUp": "Warming up",
   "status.complete": "Test complete",
   "status.failed": "Test failed",
+  "error.timeout": "The request timed out. Please try again.",
+  "error.latency": "Latency test failed",
   "error.download": "Download failed",
   "error.upload": "Upload failed",
   "error.streamingUpload": "Streaming upload failed",
