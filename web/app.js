@@ -304,7 +304,8 @@ function uploadBatch(size, signal, onProgress) {
     request.onabort = () => fail(signal.reason || new Error(i18n._("error.upload")));
     signal.addEventListener("abort", abort, { once: true });
     try {
-      request.send(new Uint8Array(size));
+      // Blob bodies avoid Safari's intermittent XHR failures with typed arrays.
+      request.send(new Blob([new Uint8Array(size)], { type: "application/octet-stream" }));
     } catch (error) {
       fail(error);
     }

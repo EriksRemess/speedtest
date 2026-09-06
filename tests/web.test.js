@@ -25,7 +25,7 @@ function page(script, overrides = {}) {
       execCommand: () => false,
     },
     matchMedia: () => ({ matches: false }),
-    performance, setTimeout, clearTimeout, AbortController, URLSearchParams,
+    performance, setTimeout, clearTimeout, AbortController, Blob, URLSearchParams,
     ...overrides,
   });
   for (const file of ['locales/en.js', 'locales/lv.js', 'i18n.js', 'chart.js', ...(script ? [script] : [])]) {
@@ -177,6 +177,9 @@ test('batch progress counts bytes once and cancellation releases the request', a
   context.onProgress = (delta) => { bytes += delta; };
   const batch = vm.runInContext('uploadBatch(100, signal, onProgress)', context);
   const request = requests[0];
+  assert.ok(request.body instanceof Blob);
+  assert.equal(request.body.size, 100);
+  assert.equal(request.body.type, 'application/octet-stream');
   request.upload.onprogress({ loaded: 20 });
   request.upload.onprogress({ loaded: 20 });
   request.upload.onprogress({ loaded: 70 });
@@ -221,7 +224,7 @@ test('timed upload preserves measured progress when final responses stall', asyn
   const requests = uploadTransport(context, (request, index) => {
     if (index === 1) {
       clock = 250;
-      request.response = { bytes: request.body.byteLength };
+      request.response = { bytes: request.body.size };
       request.onload();
     }
   });
@@ -229,10 +232,10 @@ test('timed upload preserves measured progress when final responses stall', asyn
   // Settle the initial acknowledgment so this stream starts another batch.
   for (let i = 0; i < 5; i++) await Promise.resolve();
   assert.equal(deadline.ms, 5000);
-  let sent = requests[0].body.byteLength;
+  let sent = requests[0].body.size;
   clock = 4500;
   for (const request of requests.slice(1)) {
-    const bytes = Math.floor(request.body.byteLength / 2);
+    const bytes = Math.floor(request.body.size / 2);
     sent += bytes;
     request.upload.onprogress({ loaded: bytes });
   }
