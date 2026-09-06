@@ -147,3 +147,111 @@ test('translation catalogs have matching keys and placeholders', () => {
     assert.deepEqual(en[key].match(/\{\w+\}/g), lv[key].match(/\{\w+\}/g), key);
   }
 });
+
+function uploadTransport(context, onSend) {
+  const requests = [];
+  context.XMLHttpRequest = class {
+    upload = {};
+    status = 200;
+    open() {}
+    setRequestHeader() {}
+    send(body) {
+      this.body = body;
+      requests.push(this);
+      onSend?.(this, requests.length);
+    }
+    abort() {
+      this.aborted = true;
+      this.onabort?.();
+    }
+  };
+  return requests;
+}
+
+test('batch progress counts bytes once and cancellation releases the request', async () => {
+  const context = page('app.js');
+  const requests = uploadTransport(context);
+  const controller = new AbortController();
+  let bytes = 0;
+  context.signal = controller.signal;
+  context.onProgress = (delta) => { bytes += delta; };
+  const batch = vm.runInContext('uploadBatch(100, signal, onProgress)', context);
+  const request = requests[0];
+  request.upload.onprogress({ loaded: 20 });
+  request.upload.onprogress({ loaded: 20 });
+  request.upload.onprogress({ loaded: 70 });
+  assert.equal(bytes, 70);
+  const rejection = assert.rejects(batch, /stop/);
+  controller.abort(new Error('stop'));
+  await rejection;
+  assert.equal(request.aborted, true);
+  assert.equal(request.upload.onprogress, null);
+});
+
+test('batch completion validates the status and acknowledged byte count', async () => {
+  for (const [status, acknowledged, succeeds] of [[200, 100, true], [500, 100, false], [200, 90, false]]) {
+    const context = page('app.js');
+    const requests = uploadTransport(context);
+    context.signal = new AbortController().signal;
+    let bytes = 0;
+    context.onProgress = (delta) => { bytes += delta; };
+    const batch = vm.runInContext('uploadBatch(100, signal, onProgress)', context);
+    const request = requests[0];
+    request.status = status;
+    request.response = { bytes: acknowledged };
+    request.onload();
+    if (succeeds) {
+      await batch;
+      assert.equal(bytes, 100);
+    } else {
+      await assert.rejects(batch, /Upload failed/);
+    }
+    assert.equal(request.onload, null);
+  }
+});
+
+test('timed upload preserves measured progress when final responses stall', async () => {
+  let clock = 0;
+  let deadline;
+  const context = page('app.js', {
+    performance: { now: () => clock },
+    setTimeout: (callback, ms) => { deadline = { callback, ms }; return 1; },
+    clearTimeout() {},
+  });
+  const requests = uploadTransport(context, (request, index) => {
+    if (index === 1) {
+      clock = 250;
+      request.response = { bytes: request.body.byteLength };
+      request.onload();
+    }
+  });
+  const transfer = vm.runInContext('transferUpBatched()', context);
+  // Settle the initial acknowledgment so this stream starts another batch.
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  assert.equal(deadline.ms, 5000);
+  let sent = requests[0].body.byteLength;
+  clock = 4500;
+  for (const request of requests.slice(1)) {
+    const bytes = Math.floor(request.body.byteLength / 2);
+    sent += bytes;
+    request.upload.onprogress({ loaded: bytes });
+  }
+  clock = 5000;
+  deadline.callback();
+  const result = await transfer;
+  assert.equal(result.speed, sent * 8 / 5 / 1e6);
+  assert.ok(requests.slice(1).every((request) => request.aborted));
+});
+
+test('timed upload cannot succeed without a server acknowledgment', async () => {
+  let deadline;
+  const context = page('app.js', {
+    setTimeout: (callback) => { deadline = callback; return 1; },
+    clearTimeout() {},
+  });
+  uploadTransport(context, (request) => request.upload.onprogress({ loaded: 1000 }));
+  const transfer = vm.runInContext('transferUpBatched()', context);
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  deadline();
+  await assert.rejects(transfer, /Upload failed/);
+});

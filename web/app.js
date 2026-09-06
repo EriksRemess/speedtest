@@ -109,7 +109,7 @@ function resetStages() {
   Object.values(ui.stages).forEach((stage) => stage.className = "");
 }
 // Abort and settle every peer before a failed stage can finish or fall back.
-async function runStreams(stream, timeout = REQUEST_TIMEOUT_MS, timedDownload = false) {
+async function runStreams(stream, timeout = REQUEST_TIMEOUT_MS, allowTimeout = false) {
   const controller = new AbortController();
   let expired = false;
   const timer = setTimeout(() => {
@@ -122,7 +122,7 @@ async function runStreams(stream, timeout = REQUEST_TIMEOUT_MS, timedDownload = 
   try {
     return await Promise.all(tasks);
   } catch (error) {
-    if (!timedDownload || !expired) throw error;
+    if (!allowTimeout || !expired) throw error;
     return [];
   } finally {
     clearTimeout(timer);
@@ -264,38 +264,83 @@ async function transferUpStreamed() {
   return finishTransfer(state, start, bytes);
 }
 
+function uploadBatch(size, signal, onProgress) {
+  return new Promise((resolve, reject) => {
+    signal.throwIfAborted();
+    const request = new XMLHttpRequest();
+    let reported = 0;
+    const progress = (loaded) => {
+      const bytes = Math.max(reported, Math.min(size, loaded));
+      onProgress(bytes - reported);
+      reported = bytes;
+    };
+    const cleanup = () => {
+      signal.removeEventListener("abort", abort);
+      request.onload = request.onerror = request.onabort = null;
+      request.upload.onprogress = null;
+    };
+    const fail = (error) => {
+      cleanup();
+      reject(error);
+    };
+    const abort = () => {
+      request.abort();
+      fail(signal.reason);
+    };
+    request.open("POST", `/api/upload?n=${nonce()}`);
+    request.setRequestHeader("Content-Type", "application/octet-stream");
+    request.responseType = "json";
+    request.upload.onprogress = (event) => progress(event.loaded);
+    request.onload = () => {
+      if (request.status !== 200 || request.response?.bytes !== size) {
+        fail(new Error(i18n._("error.upload")));
+        return;
+      }
+      progress(size);
+      cleanup();
+      resolve();
+    };
+    request.onerror = () => fail(new Error(i18n._("error.upload")));
+    request.onabort = () => fail(signal.reason || new Error(i18n._("error.upload")));
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      request.send(new Uint8Array(size));
+    } catch (error) {
+      fail(error);
+    }
+  });
+}
+
 async function transferUpBatched() {
   const minChunk = 256 * 1024;
   const maxChunk = 16 * 1024 * 1024;
   const start = performance.now();
   const state = transferState();
+  let acknowledged = 0;
   show(0, i18n._("status.testingUpload"), 0);
 
   async function stream(signal) {
     let chunkSize = minChunk;
     while (performance.now() - start < DURATION_MS) {
-      const response = await fetch(`/api/upload?n=${nonce()}`, {
-        method: "POST",
-        signal,
-        headers: { "Content-Type": "application/octet-stream" },
-        body: new Uint8Array(chunkSize),
+      const batchStarted = performance.now();
+      await uploadBatch(chunkSize, signal, (bytes) => {
+        state.bytes += bytes;
+        updateTransfer(state, performance.now() - start, i18n._("status.testingUpload"));
       });
-      if (!response.ok) throw new Error(i18n._("error.upload"));
-      const result = await response.json();
-      state.bytes += result.bytes;
-      const elapsed = performance.now() - start;
-      const seconds = elapsed / 1000;
-      updateTransfer(state, elapsed, i18n._("status.testingUpload"));
-
-      const streamRate = state.bytes / seconds / STREAMS;
-      const desired = streamRate * 0.5;
+      acknowledged += 1;
+      const seconds = Math.max(1, performance.now() - batchStarted) / 1000;
+      const desired = chunkSize / seconds * 0.5;
       chunkSize = Math.round(
         Math.min(maxChunk, Math.max(minChunk, desired)) / minChunk,
       ) * minChunk;
     }
   }
 
-  await runStreams(stream);
+  // Measure bytes sent during the interval, including unfinished final batches.
+  // Waiting for every response can turn one stalled request into a failed test
+  // or include idle response time in the measured upload rate.
+  await runStreams(stream, DURATION_MS, true);
+  if (acknowledged === 0) throw new Error(i18n._("error.upload"));
   return finishTransfer(state, start);
 }
 
