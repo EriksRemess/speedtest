@@ -10,6 +10,7 @@ permissions:
 
 env:
   IMAGE: ghcr.io/eriksremess/speedtest
+  RUSTUP_TOOLCHAIN: 1.100.0
 
 jobs:
   publish:
@@ -17,7 +18,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component clippy,rustfmt
 
       - name: Verify source
         run: |
