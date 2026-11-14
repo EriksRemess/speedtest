@@ -1,4 +1,4 @@
-FROM docker.io/library/rust:1.97-alpine@sha256:ec9c91e77119ce498cd1e87d96d77e0f75b2cee21655a29bc2bf75a51a2b20a4 AS build
+FROM docker.io/library/rust:1.100-alpine@sha256:de1e0058543a81ed7b046629167db587c67a94bdf37cce14eb27f0ec83baaffb AS build
 
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./

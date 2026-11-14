@@ -2,6 +2,7 @@
 name = "speedtest"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.100"
 description = "A dependency-free browser speed test with an optional iperf3-compatible TCP server"
 license = "MIT"
 

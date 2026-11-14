@@ -1,4 +1,5 @@
 use std::io::{self, Read, Write};
+use std::mem::DropGuard;
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
@@ -41,6 +42,22 @@ struct ActiveSession {
 struct WorkerGroup {
     running: Arc<AtomicBool>,
     handles: Option<Vec<JoinHandle<u64>>>,
+}
+
+fn active_session_guard(
+    active: Arc<Mutex<Option<ActiveSession>>>,
+    cookie: [u8; COOKIE_SIZE],
+    peer_ip: IpAddr,
+) -> impl Drop {
+    DropGuard::new(active, move |active| {
+        if let Ok(mut current) = active.lock()
+            && current
+                .as_ref()
+                .is_some_and(|session| session.cookie == cookie && session.peer_ip == peer_ip)
+        {
+            *current = None;
+        }
+    })
 }
 
 impl WorkerGroup {
@@ -116,15 +133,9 @@ pub fn serve(listener: TcpListener) -> io::Result<()> {
         thread::Builder::new()
             .name(format!("iperf3-session-{peer}"))
             .spawn(move || {
+                let _session_cleanup = active_session_guard(active_for_session, cookie, peer.ip());
                 if let Err(error) = session(stream, peer, receiver) {
                     eprintln!("iperf3 session from {peer} failed: {error}");
-                }
-                if let Ok(mut current) = active_for_session.lock()
-                    && current.as_ref().is_some_and(|session| {
-                        session.cookie == cookie && session.peer_ip == peer.ip()
-                    })
-                {
-                    *current = None;
                 }
             })?;
     }
@@ -629,6 +640,29 @@ mod tests {
         });
         drop(WorkerGroup::new(vec![handle], running.clone()));
         assert!(!running.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn session_guard_clears_the_matching_session_during_unwind() {
+        let cookie = [1; COOKIE_SIZE];
+        let peer_ip = IpAddr::from([127, 0, 0, 1]);
+        let (sender, _receiver) = sync_channel(1);
+        let active = Arc::new(Mutex::new(Some(ActiveSession {
+            cookie,
+            peer_ip,
+            streams: sender,
+        })));
+
+        let result = std::panic::catch_unwind({
+            let active = active.clone();
+            move || {
+                let _session_cleanup = active_session_guard(active, cookie, peer_ip);
+                panic!("simulated session panic");
+            }
+        });
+
+        assert!(result.is_err());
+        assert!(active.lock().unwrap().is_none());
     }
 
     #[test]
